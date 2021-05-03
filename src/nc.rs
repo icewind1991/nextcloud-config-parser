@@ -1,5 +1,8 @@
-use crate::{Config, Database, DbConnect, DbError, Error, NotAConfigError, RedisConfig, Result};
+#[cfg(feature = "redis-connect")]
+use crate::RedisConfig;
+use crate::{Config, Database, DbConnect, DbError, Error, NotAConfigError, Result};
 use php_literal_parser::Value;
+#[cfg(feature = "redis-connect")]
 use redis::{ConnectionAddr, ConnectionInfo};
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -93,12 +96,14 @@ pub fn parse(path: impl AsRef<Path>) -> Result<Config> {
         .clone()
         .into_string()
         .ok_or(Error::NoUrl)?;
+    #[cfg(feature = "redis-connect")]
     let redis = parse_redis_options(&parsed);
 
     Ok(Config {
         database,
         database_prefix,
         nextcloud_url,
+        #[cfg(feature = "redis-connect")]
         redis,
     })
 }
@@ -230,11 +235,13 @@ fn split_host(host: &str) -> (&str, Option<u16>, Option<&str>) {
     }
 }
 
+#[cfg(feature = "redis-connect")]
 enum RedisAddress {
     Single(ConnectionAddr),
     Cluster(Vec<ConnectionAddr>),
 }
 
+#[cfg(feature = "redis-connect")]
 fn parse_redis_options(parsed: &Value) -> RedisConfig {
     let (redis_options, address) = if parsed["redis.cluster"].is_array() {
         let redis_options = &parsed["redis.cluster"];
@@ -292,6 +299,7 @@ fn parse_redis_options(parsed: &Value) -> RedisConfig {
 }
 
 #[test]
+#[cfg(feature = "redis-connect")]
 fn test_redis_empty_password_none() {
     let config =
         php_literal_parser::from_str(r#"["redis" => ["host" => "redis", "password" => "pass"]]"#)
@@ -349,6 +357,7 @@ fn test_parse_config_basic() {
         .unwrap(),
         config.database.into(),
     );
+    #[cfg(feature = "redis-connect")]
     assert_debug_equal(
         RedisConfig::Single(ConnectionInfo::from_str("redis://127.0.0.1").unwrap()),
         config.redis,
@@ -362,6 +371,7 @@ fn test_parse_implicit_prefix() {
 }
 
 #[test]
+#[cfg(feature = "redis-connect")]
 fn test_parse_empty_redis_password() {
     let config = config_from_file("tests/configs/empty_redis_password.php");
     assert_debug_equal(
@@ -371,6 +381,7 @@ fn test_parse_empty_redis_password() {
 }
 
 #[test]
+#[cfg(feature = "redis-connect")]
 fn test_parse_full_redis() {
     let config = config_from_file("tests/configs/full_redis.php");
     assert_debug_equal(
@@ -380,6 +391,7 @@ fn test_parse_full_redis() {
 }
 
 #[test]
+#[cfg(feature = "redis-connect")]
 fn test_parse_redis_socket() {
     let config = config_from_file("tests/configs/redis_socket.php");
     assert_debug_equal(
@@ -414,6 +426,7 @@ fn test_parse_comment_whitespace() {
         .unwrap(),
         config.database.into(),
     );
+    #[cfg(feature = "redis-connect")]
     assert_debug_equal(
         RedisConfig::Single(ConnectionInfo::from_str("redis://127.0.0.1").unwrap()),
         config.redis,
@@ -497,6 +510,7 @@ fn test_parse_postgres_socket_folder() {
 }
 
 #[test]
+#[cfg(feature = "redis-connect")]
 fn test_parse_redis_cluster() {
     let config = config_from_file("tests/configs/redis.cluster.php");
     let mut conns = config.redis.into_vec();
@@ -540,6 +554,7 @@ fn test_parse_config_multiple() {
         .unwrap(),
         config.database.into(),
     );
+    #[cfg(feature = "redis-connect")]
     assert_debug_equal(
         RedisConfig::Single(ConnectionInfo::from_str("redis://127.0.0.1").unwrap()),
         config.redis,

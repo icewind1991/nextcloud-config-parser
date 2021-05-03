@@ -1,6 +1,8 @@
 mod nc;
 
+#[cfg(feature = "redis-connect")]
 use redis::{ConnectionAddr, ConnectionInfo};
+#[cfg(feature = "redis-connect")]
 use std::iter::once;
 use std::path::PathBuf;
 use thiserror::Error;
@@ -11,16 +13,19 @@ pub use nc::parse;
 pub struct Config {
     pub database: Database,
     pub database_prefix: String,
+    #[cfg(feature = "redis-connect")]
     pub redis: RedisConfig,
     pub nextcloud_url: String,
 }
 
+#[cfg(feature = "redis-connect")]
 #[derive(Debug)]
 pub enum RedisConfig {
     Single(ConnectionInfo),
     Cluster(Vec<ConnectionInfo>),
 }
 
+#[cfg(feature = "redis-connect")]
 impl RedisConfig {
     pub fn addr(&self) -> impl Iterator<Item = &ConnectionAddr> {
         let boxed: Box<dyn Iterator<Item = &ConnectionAddr>> = match self {
