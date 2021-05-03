@@ -1,6 +1,6 @@
 #[cfg(feature = "redis-connect")]
 use crate::RedisConfig;
-use crate::{Config, Database, DbConnect, DbError, Error, NotAConfigError, Result};
+use crate::{Config, Database, DbConnect, DbError, Error, NotAConfigError, PhpParseError, Result};
 use php_literal_parser::Value;
 #[cfg(feature = "redis-connect")]
 use redis::{ConnectionAddr, ConnectionInfo};
@@ -54,7 +54,13 @@ fn parse_php(path: impl AsRef<Path>) -> Result<Value> {
             )));
         }
     };
-    Ok(php_literal_parser::from_str(php)?)
+    php_literal_parser::from_str(php).map_err(|err| {
+        Error::Php(PhpParseError {
+            err,
+            path: path.as_ref().into(),
+            source: php.into(),
+        })
+    })
 }
 
 fn merge_configs(input: Vec<(PathBuf, Value)>) -> Result<Value> {

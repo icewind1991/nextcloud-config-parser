@@ -1,8 +1,12 @@
-use nextcloud_config_parser::{parse, Error};
+use nextcloud_config_parser::parse;
 
-fn main() -> Result<(), Error> {
-    let config = parse("tests/configs/basic.php")?;
+fn main() {
+    let config = match parse("tests/configs/basic.php") {
+        Ok(config) => config,
+        Err(err) => {
+            eprintln!("{}", err);
+            return;
+        }
+    };
     dbg!(config);
-
-    Ok(())
 }

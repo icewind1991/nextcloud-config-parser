@@ -18,5 +18,7 @@ sqlx = { version = "0.5", features = ["any", "mysql", "sqlite", "postgres"], opt
 sqlx = { version = "0.5", features = ["runtime-tokio-rustls", "any", "mysql", "sqlite", "postgres"] }
 
 [features]
+default = ["span-colors"]
+span-colors = ["php-literal-parser/colors"]
 db-sqlx = ["sqlx"]
 redis-connect = ["redis"]

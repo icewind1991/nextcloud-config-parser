@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use thiserror::Error;
 
 pub use nc::parse;
+use std::fmt::{Display, Formatter};
 
 #[derive(Debug)]
 pub struct Config {
@@ -75,7 +76,7 @@ type Result<T, E = Error> = std::result::Result<T, E>;
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("Error while parsing php literal: {0:#}")]
-    Php(#[from] php_literal_parser::ParseError),
+    Php(PhpParseError),
     #[error("Provided config file doesn't seem to be a nextcloud config file: {0:#}")]
     NotAConfig(#[from] NotAConfigError),
     #[error("Failed to read config file")]
@@ -88,6 +89,20 @@ pub enum Error {
     Redis,
     #[error("`overwrite.cli.url` not set`")]
     NoUrl,
+}
+
+#[derive(Debug)]
+pub struct PhpParseError {
+    err: php_literal_parser::ParseError,
+    source: String,
+    path: PathBuf,
+}
+
+impl Display for PhpParseError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let err = self.err.clone().with_source(&self.source);
+        write!(f, "{}", err)
+    }
 }
 
 #[derive(Debug, Error)]
