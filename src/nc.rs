@@ -1,11 +1,8 @@
-use crate::{Config, Error, NotAConfigError, RedisConfig, Result};
+use crate::{Config, Database, DbConnect, DbError, Error, NotAConfigError, RedisConfig, Result};
 use php_literal_parser::Value;
 use redis::{ConnectionAddr, ConnectionInfo};
-use sqlx::any::AnyConnectOptions;
-use sqlx::mysql::{MySqlConnectOptions, MySqlSslMode};
-use sqlx::postgres::PgConnectOptions;
-use sqlx::sqlite::SqliteConnectOptions;
 use std::collections::HashMap;
+use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -106,72 +103,74 @@ pub fn parse(path: impl AsRef<Path>) -> Result<Config> {
     })
 }
 
-fn parse_db_options(parsed: &Value) -> Result<AnyConnectOptions> {
+fn parse_db_options(parsed: &Value) -> Result<Database> {
     match parsed["dbtype"].as_str() {
         Some("mysql") => {
-            let mut options = MySqlConnectOptions::new();
-            if let Some(username) = parsed["dbuser"].as_str() {
-                options = options.username(username);
-            }
-            if let Some(password) = parsed["dbpassword"].as_str() {
-                options = options.password(password);
-            }
+            let username = parsed["dbuser"].as_str().ok_or(DbError::NoUsername)?;
+            let password = parsed["dbpassword"].as_str().ok_or(DbError::NoPassword)?;
             let socket_addr1 = PathBuf::from("/var/run/mysqld/mysqld.sock");
             let socket_addr2 = PathBuf::from("/tmp/mysql.sock");
             let socket_addr3 = PathBuf::from("/run/mysql/mysql.sock");
-            match split_host(parsed["dbhost"].as_str().unwrap_or_default()) {
-                ("localhost", None, None) if socket_addr1.exists() => {
-                    options = options.socket(socket_addr1);
-                }
-                ("localhost", None, None) if socket_addr2.exists() => {
-                    options = options.socket(socket_addr2);
-                }
-                ("localhost", None, None) if socket_addr3.exists() => {
-                    options = options.socket(socket_addr3);
-                }
-                (addr, None, None) => {
-                    options = options.host(addr);
-                    if IpAddr::from_str(addr).is_ok() {
-                        options = options.ssl_mode(MySqlSslMode::Disabled);
+            let (mut connect, disable_ssl) =
+                match split_host(parsed["dbhost"].as_str().unwrap_or_default()) {
+                    ("localhost", None, None) if socket_addr1.exists() => {
+                        (DbConnect::Socket(socket_addr1), false)
                     }
-                }
-                (addr, Some(port), None) => {
-                    options = options.host(addr).port(port);
-                    if IpAddr::from_str(addr).is_ok() {
-                        options = options.ssl_mode(MySqlSslMode::Disabled);
+                    ("localhost", None, None) if socket_addr2.exists() => {
+                        (DbConnect::Socket(socket_addr2), false)
                     }
-                }
-                (_, None, Some(socket)) => {
-                    options = options.socket(socket);
-                }
-                (_, Some(_), Some(_)) => {
-                    unreachable!()
-                }
-            }
+                    ("localhost", None, None) if socket_addr3.exists() => {
+                        (DbConnect::Socket(socket_addr3), false)
+                    }
+                    (addr, None, None) => (
+                        DbConnect::Tcp {
+                            host: addr.into(),
+                            port: 3306,
+                        },
+                        IpAddr::from_str(addr).is_ok(),
+                    ),
+                    (addr, Some(port), None) => (
+                        DbConnect::Tcp {
+                            host: addr.into(),
+                            port,
+                        },
+                        IpAddr::from_str(addr).is_ok(),
+                    ),
+                    (_, None, Some(socket)) => (DbConnect::Socket(socket.into()), false),
+                    (_, Some(_), Some(_)) => {
+                        unreachable!()
+                    }
+                };
             if let Some(port) = parsed["dbport"].clone().into_int() {
-                options = options.port(port as u16);
+                if let DbConnect::Tcp {
+                    port: connect_port, ..
+                } = &mut connect
+                {
+                    *connect_port = port as u16;
+                }
             }
-            if let Some(name) = parsed["dbname"].as_str() {
-                options = options.database(name);
-            }
+            let database = parsed["dbname"].as_str().ok_or(DbError::NoName)?;
 
-            Ok(options.into())
+            Ok(Database::MySql {
+                database: database.into(),
+                username: username.into(),
+                password: password.into(),
+                connect,
+                disable_ssl,
+            })
         }
         Some("pgsql") => {
-            let mut options = PgConnectOptions::new();
-            if let Some(username) = parsed["dbuser"].as_str() {
-                options = options.username(username);
-            }
-            if let Some(password) = parsed["dbpassword"].as_str() {
-                options = options.password(password);
-            }
-            match split_host(parsed["dbhost"].as_str().unwrap_or_default()) {
-                (addr, None, None) => {
-                    options = options.host(addr);
-                }
-                (addr, Some(port), None) => {
-                    options = options.host(addr).port(port);
-                }
+            let username = parsed["dbuser"].as_str().ok_or(DbError::NoUsername)?;
+            let password = parsed["dbpassword"].as_str().ok_or(DbError::NoPassword)?;
+            let mut connect = match split_host(parsed["dbhost"].as_str().unwrap_or_default()) {
+                (addr, None, None) => DbConnect::Tcp {
+                    host: addr.into(),
+                    port: 5432,
+                },
+                (addr, Some(port), None) => DbConnect::Tcp {
+                    host: addr.into(),
+                    port,
+                },
                 (_, None, Some(socket)) => {
                     let mut socket_path = Path::new(socket);
 
@@ -183,32 +182,37 @@ fn parse_db_options(parsed: &Value) -> Result<AnyConnectOptions> {
                     {
                         socket_path = socket_path.parent().unwrap();
                     }
-                    options = options.socket(socket_path);
+                    DbConnect::Socket(socket_path.into())
                 }
                 (_, Some(_), Some(_)) => {
                     unreachable!()
                 }
-            }
+            };
             if let Some(port) = parsed["dbport"].clone().into_int() {
-                options = options.port(port as u16);
+                if let DbConnect::Tcp {
+                    port: connect_port, ..
+                } = &mut connect
+                {
+                    *connect_port = port as u16;
+                }
             }
-            if let Some(name) = parsed["dbname"].as_str() {
-                options = options.database(name);
-            }
-            Ok(options.into())
+            let database = parsed["dbname"].as_str().ok_or(DbError::NoName)?;
+
+            Ok(Database::Postgres {
+                database: database.into(),
+                username: username.into(),
+                password: password.into(),
+                connect,
+            })
         }
         Some("sqlite3") => {
-            let mut options = SqliteConnectOptions::new();
-            if let Some(data_dir) = parsed["datadirectory"].as_str() {
-                let db_name = parsed["dbname"]
-                    .clone()
-                    .into_string()
-                    .unwrap_or_else(|| String::from("owncloud"));
-                options = options.filename(format!("{}/{}.db", data_dir, db_name));
-            }
-            Ok(options.into())
+            let data_dir = parsed["datadirectory"].as_str().ok_or(DbError::NoName)?;
+            let db_name = parsed["dbname"].as_str().ok_or(DbError::NoName)?;
+            Ok(Database::Sqlite {
+                database: format!("{}/{}.db", data_dir, db_name).into(),
+            })
         }
-        Some(ty) => Err(Error::UnsupportedDb(ty.into())),
+        Some(ty) => Err(Error::InvalidDb(DbError::Unsupported(ty.into()))),
         None => Err(Error::NoDb),
     }
 }
@@ -304,13 +308,15 @@ fn test_redis_empty_password_none() {
 
 #[cfg(test)]
 #[track_caller]
-fn assert_debug_equal<T: Debug, U: Debug>(a: T, b: U) {
+fn assert_debug_equal<T: Debug>(a: T, b: T) {
     assert_eq!(format!("{:?}", a), format!("{:?}", b),);
 }
 
 #[cfg(test)]
+#[allow(unused_imports)]
+use sqlx::{any::AnyConnectOptions, postgres::PgConnectOptions};
+#[cfg(test)]
 use std::fmt::Debug;
-use std::net::IpAddr;
 
 #[cfg(test)]
 fn config_from_file(path: &str) -> Config {
@@ -323,11 +329,25 @@ fn test_parse_config_basic() {
     assert_eq!("https://cloud.example.com", config.nextcloud_url);
     assert_eq!("oc_", config.database_prefix);
     assert_debug_equal(
+        &Database::MySql {
+            database: "nextcloud".to_string(),
+            username: "nextcloud".to_string(),
+            password: "secret".to_string(),
+            connect: DbConnect::Tcp {
+                host: "127.0.0.1".to_string(),
+                port: 3306,
+            },
+            disable_ssl: true,
+        },
+        &config.database,
+    );
+    #[cfg(feature = "db-sqlx")]
+    assert_debug_equal(
         AnyConnectOptions::from_str(
             "mysql://nextcloud:secret@127.0.0.1/nextcloud?ssl-mode=disabled",
         )
         .unwrap(),
-        config.database,
+        config.database.into(),
     );
     assert_debug_equal(
         RedisConfig::Single(ConnectionInfo::from_str("redis://127.0.0.1").unwrap()),
@@ -374,11 +394,25 @@ fn test_parse_comment_whitespace() {
     assert_eq!("https://cloud.example.com", config.nextcloud_url);
     assert_eq!("oc_", config.database_prefix);
     assert_debug_equal(
+        &Database::MySql {
+            database: "nextcloud".to_string(),
+            username: "nextcloud".to_string(),
+            password: "secret".to_string(),
+            connect: DbConnect::Tcp {
+                host: "127.0.0.1".to_string(),
+                port: 3306,
+            },
+            disable_ssl: true,
+        },
+        &config.database,
+    );
+    #[cfg(feature = "db-sqlx")]
+    assert_debug_equal(
         AnyConnectOptions::from_str(
             "mysql://nextcloud:secret@127.0.0.1/nextcloud?ssl-mode=disabled",
         )
         .unwrap(),
-        config.database,
+        config.database.into(),
     );
     assert_debug_equal(
         RedisConfig::Single(ConnectionInfo::from_str("redis://127.0.0.1").unwrap()),
@@ -390,11 +424,25 @@ fn test_parse_comment_whitespace() {
 fn test_parse_port_in_host() {
     let config = config_from_file("tests/configs/port_in_host.php");
     assert_debug_equal(
+        &Database::MySql {
+            database: "nextcloud".to_string(),
+            username: "nextcloud".to_string(),
+            password: "secret".to_string(),
+            connect: DbConnect::Tcp {
+                host: "127.0.0.1".to_string(),
+                port: 1234,
+            },
+            disable_ssl: true,
+        },
+        &config.database,
+    );
+    #[cfg(feature = "db-sqlx")]
+    assert_debug_equal(
         AnyConnectOptions::from_str(
             "mysql://nextcloud:secret@127.0.0.1:1234/nextcloud?ssl-mode=disabled",
         )
         .unwrap(),
-        config.database,
+        config.database.into(),
     );
 }
 
@@ -402,20 +450,15 @@ fn test_parse_port_in_host() {
 fn test_parse_postgres_socket() {
     let config = config_from_file("tests/configs/postgres_socket.php");
     assert_debug_equal(
-        AnyConnectOptions::from(
-            PgConnectOptions::new()
-                .socket("/var/run/postgresql")
-                .username("redacted")
-                .password("redacted")
-                .database("nextcloud"),
-        ),
-        config.database,
+        &Database::Postgres {
+            database: "nextcloud".to_string(),
+            username: "redacted".to_string(),
+            password: "redacted".to_string(),
+            connect: DbConnect::Socket("/var/run/postgresql".into()),
+        },
+        &config.database,
     );
-}
-
-#[test]
-fn test_parse_postgres_socket_folder() {
-    let config = config_from_file("tests/configs/postgres_socket_folder.php");
+    #[cfg(feature = "db-sqlx")]
     assert_debug_equal(
         AnyConnectOptions::from(
             PgConnectOptions::new()
@@ -424,7 +467,32 @@ fn test_parse_postgres_socket_folder() {
                 .password("redacted")
                 .database("nextcloud"),
         ),
-        config.database,
+        config.database.into(),
+    );
+}
+
+#[test]
+fn test_parse_postgres_socket_folder() {
+    let config = config_from_file("tests/configs/postgres_socket_folder.php");
+    assert_debug_equal(
+        &Database::Postgres {
+            database: "nextcloud".to_string(),
+            username: "redacted".to_string(),
+            password: "redacted".to_string(),
+            connect: DbConnect::Socket("/var/run/postgresql".into()),
+        },
+        &config.database,
+    );
+    #[cfg(feature = "db-sqlx")]
+    assert_debug_equal(
+        AnyConnectOptions::from(
+            PgConnectOptions::new()
+                .socket("/var/run/postgresql")
+                .username("redacted")
+                .password("redacted")
+                .database("nextcloud"),
+        ),
+        config.database.into(),
     );
 }
 
@@ -452,11 +520,25 @@ fn test_parse_config_multiple() {
     assert_eq!("https://cloud.example.com", config.nextcloud_url);
     assert_eq!("oc_", config.database_prefix);
     assert_debug_equal(
+        &Database::MySql {
+            database: "nextcloud".to_string(),
+            username: "nextcloud".to_string(),
+            password: "secret".to_string(),
+            connect: DbConnect::Tcp {
+                host: "127.0.0.1".to_string(),
+                port: 3306,
+            },
+            disable_ssl: true,
+        },
+        &config.database,
+    );
+    #[cfg(feature = "db-sqlx")]
+    assert_debug_equal(
         AnyConnectOptions::from_str(
             "mysql://nextcloud:secret@127.0.0.1/nextcloud?ssl-mode=disabled",
         )
         .unwrap(),
-        config.database,
+        config.database.into(),
     );
     assert_debug_equal(
         RedisConfig::Single(ConnectionInfo::from_str("redis://127.0.0.1").unwrap()),
@@ -468,10 +550,24 @@ fn test_parse_config_multiple() {
 fn test_parse_config_mysql_fqdn() {
     let config = config_from_file("tests/configs/mysql_fqdn.php");
     assert_debug_equal(
+        &Database::MySql {
+            database: "nextcloud".to_string(),
+            username: "nextcloud".to_string(),
+            password: "secret".to_string(),
+            connect: DbConnect::Tcp {
+                host: "db.example.com".to_string(),
+                port: 3306,
+            },
+            disable_ssl: false,
+        },
+        &config.database,
+    );
+    #[cfg(feature = "db-sqlx")]
+    assert_debug_equal(
         AnyConnectOptions::from_str(
             "mysql://nextcloud:secret@db.example.com/nextcloud?ssl-mode=preferred",
         )
         .unwrap(),
-        config.database,
+        config.database.into(),
     );
 }

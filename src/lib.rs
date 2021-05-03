@@ -1,7 +1,6 @@
 mod nc;
 
 use redis::{ConnectionAddr, ConnectionInfo};
-use sqlx::any::AnyConnectOptions;
 use std::iter::once;
 use std::path::PathBuf;
 use thiserror::Error;
@@ -10,7 +9,7 @@ pub use nc::parse;
 
 #[derive(Debug)]
 pub struct Config {
-    pub database: AnyConnectOptions,
+    pub database: Database,
     pub database_prefix: String,
     pub redis: RedisConfig,
     pub nextcloud_url: String,
@@ -76,8 +75,8 @@ pub enum Error {
     NotAConfig(#[from] NotAConfigError),
     #[error("Failed to read config file")]
     ReadFailed(std::io::Error, PathBuf),
-    #[error("unsupported database type {0}")]
-    UnsupportedDb(String),
+    #[error("invalid database configuration: {0}")]
+    InvalidDb(#[from] DbError),
     #[error("no database configuration")]
     NoDb,
     #[error("Invalid redis configuration")]
@@ -87,9 +86,108 @@ pub enum Error {
 }
 
 #[derive(Debug, Error)]
+pub enum DbError {
+    #[error("unsupported database type {0}")]
+    Unsupported(String),
+    #[error("no username set")]
+    NoUsername,
+    #[error("no password set")]
+    NoPassword,
+    #[error("no database name")]
+    NoName,
+}
+
+#[derive(Debug, Error)]
 pub enum NotAConfigError {
     #[error("$CONFIG not found in file")]
     NoConfig(PathBuf),
     #[error("$CONFIG is not an array")]
     NotAnArray(PathBuf),
+}
+
+#[derive(Debug)]
+pub enum Database {
+    Sqlite {
+        database: PathBuf,
+    },
+    MySql {
+        database: String,
+        username: String,
+        password: String,
+        connect: DbConnect,
+        disable_ssl: bool,
+    },
+    Postgres {
+        database: String,
+        username: String,
+        password: String,
+        connect: DbConnect,
+    },
+}
+
+#[derive(Debug)]
+pub enum DbConnect {
+    Tcp { host: String, port: u16 },
+    Socket(PathBuf),
+}
+
+#[cfg(feature = "db-sqlx")]
+impl From<Database> for sqlx::any::AnyConnectOptions {
+    fn from(cfg: Database) -> Self {
+        use sqlx::{
+            mysql::{MySqlConnectOptions, MySqlSslMode},
+            postgres::PgConnectOptions,
+            sqlite::SqliteConnectOptions,
+        };
+
+        match cfg {
+            Database::Sqlite { database } => {
+                SqliteConnectOptions::default().filename(database).into()
+            }
+            Database::MySql {
+                database,
+                username,
+                password,
+                connect,
+                disable_ssl,
+            } => {
+                let mut options = MySqlConnectOptions::default()
+                    .database(&database)
+                    .username(&username)
+                    .password(&password);
+                if disable_ssl {
+                    options = options.ssl_mode(MySqlSslMode::Disabled);
+                }
+                match connect {
+                    DbConnect::Socket(socket) => {
+                        options = options.socket(socket);
+                    }
+                    DbConnect::Tcp { host, port } => {
+                        options = options.host(&host).port(port);
+                    }
+                }
+                options.into()
+            }
+            Database::Postgres {
+                database,
+                username,
+                password,
+                connect,
+            } => {
+                let mut options = PgConnectOptions::default()
+                    .database(&database)
+                    .username(&username)
+                    .password(&password);
+                match connect {
+                    DbConnect::Socket(socket) => {
+                        options = options.socket(socket);
+                    }
+                    DbConnect::Tcp { host, port } => {
+                        options = options.host(&host).port(port);
+                    }
+                }
+                options.into()
+            }
+        }
+    }
 }
