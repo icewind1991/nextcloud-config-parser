@@ -142,6 +142,7 @@ pub enum Database {
         username: String,
         password: String,
         connect: DbConnect,
+        disable_ssl: bool,
     },
 }
 
@@ -156,7 +157,7 @@ impl From<Database> for sqlx::any::AnyConnectOptions {
     fn from(cfg: Database) -> Self {
         use sqlx::{
             mysql::{MySqlConnectOptions, MySqlSslMode},
-            postgres::PgConnectOptions,
+            postgres::{PgConnectOptions, PgSslMode},
             sqlite::SqliteConnectOptions,
         };
 
@@ -193,11 +194,15 @@ impl From<Database> for sqlx::any::AnyConnectOptions {
                 username,
                 password,
                 connect,
+                disable_ssl,
             } => {
                 let mut options = PgConnectOptions::default()
                     .database(&database)
                     .username(&username)
                     .password(&password);
+                if disable_ssl {
+                    options = options.ssl_mode(PgSslMode::Disable);
+                }
                 match connect {
                     DbConnect::Socket(socket) => {
                         options = options.socket(socket);

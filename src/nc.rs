@@ -173,32 +173,39 @@ fn parse_db_options(parsed: &Value) -> Result<Database> {
         Some("pgsql") => {
             let username = parsed["dbuser"].as_str().ok_or(DbError::NoUsername)?;
             let password = parsed["dbpassword"].as_str().ok_or(DbError::NoPassword)?;
-            let mut connect = match split_host(parsed["dbhost"].as_str().unwrap_or_default()) {
-                (addr, None, None) => DbConnect::Tcp {
-                    host: addr.into(),
-                    port: 5432,
-                },
-                (addr, Some(port), None) => DbConnect::Tcp {
-                    host: addr.into(),
-                    port,
-                },
-                (_, None, Some(socket)) => {
-                    let mut socket_path = Path::new(socket);
+            let (mut connect, disable_ssl) =
+                match split_host(parsed["dbhost"].as_str().unwrap_or_default()) {
+                    (addr, None, None) => (
+                        DbConnect::Tcp {
+                            host: addr.into(),
+                            port: 5432,
+                        },
+                        IpAddr::from_str(addr).is_ok(),
+                    ),
+                    (addr, Some(port), None) => (
+                        DbConnect::Tcp {
+                            host: addr.into(),
+                            port,
+                        },
+                        IpAddr::from_str(addr).is_ok(),
+                    ),
+                    (_, None, Some(socket)) => {
+                        let mut socket_path = Path::new(socket);
 
-                    // sqlx wants the folder the socket is in, not the socket itself
-                    if socket_path
-                        .file_name()
-                        .map(|name| name.to_str().unwrap().starts_with(".s"))
-                        .unwrap_or(false)
-                    {
-                        socket_path = socket_path.parent().unwrap();
+                        // sqlx wants the folder the socket is in, not the socket itself
+                        if socket_path
+                            .file_name()
+                            .map(|name| name.to_str().unwrap().starts_with(".s"))
+                            .unwrap_or(false)
+                        {
+                            socket_path = socket_path.parent().unwrap();
+                        }
+                        (DbConnect::Socket(socket_path.into()), false)
                     }
-                    DbConnect::Socket(socket_path.into())
-                }
-                (_, Some(_), Some(_)) => {
-                    unreachable!()
-                }
-            };
+                    (_, Some(_), Some(_)) => {
+                        unreachable!()
+                    }
+                };
             if let Some(port) = parsed["dbport"].clone().into_int() {
                 if let DbConnect::Tcp {
                     port: connect_port, ..
@@ -214,6 +221,7 @@ fn parse_db_options(parsed: &Value) -> Result<Database> {
                 username: username.into(),
                 password: password.into(),
                 connect,
+                disable_ssl,
             })
         }
         Some("sqlite3") => {
@@ -474,6 +482,7 @@ fn test_parse_postgres_socket() {
             username: "redacted".to_string(),
             password: "redacted".to_string(),
             connect: DbConnect::Socket("/var/run/postgresql".into()),
+            disable_ssl: false,
         },
         &config.database,
     );
@@ -499,6 +508,7 @@ fn test_parse_postgres_socket_folder() {
             username: "redacted".to_string(),
             password: "redacted".to_string(),
             connect: DbConnect::Socket("/var/run/postgresql".into()),
+            disable_ssl: false,
         },
         &config.database,
     );
@@ -589,6 +599,65 @@ fn test_parse_config_mysql_fqdn() {
             "mysql://nextcloud:secret@db.example.com/nextcloud?ssl-mode=preferred",
         )
         .unwrap(),
+        config.database.into(),
+    );
+}
+
+#[test]
+fn test_parse_postgres_ip() {
+    let config = config_from_file("tests/configs/postgres_ip.php");
+    assert_debug_equal(
+        &Database::Postgres {
+            database: "nextcloud".to_string(),
+            username: "redacted".to_string(),
+            password: "redacted".to_string(),
+            connect: DbConnect::Tcp {
+                host: "1.2.3.4".to_string(),
+                port: 5432,
+            },
+            disable_ssl: true,
+        },
+        &config.database,
+    );
+    #[cfg(feature = "db-sqlx")]
+    assert_debug_equal(
+        AnyConnectOptions::from(
+            PgConnectOptions::new()
+                .host("1.2.3.4")
+                .username("redacted")
+                .password("redacted")
+                .database("nextcloud")
+                .ssl_mode(sqlx::postgres::PgSslMode::Disable),
+        ),
+        config.database.into(),
+    );
+}
+
+#[test]
+fn test_parse_postgres_fqdn() {
+    let config = config_from_file("tests/configs/postgres_fqdn.php");
+    assert_debug_equal(
+        &Database::Postgres {
+            database: "nextcloud".to_string(),
+            username: "redacted".to_string(),
+            password: "redacted".to_string(),
+            connect: DbConnect::Tcp {
+                host: "pg.example.com".to_string(),
+                port: 5432,
+            },
+            disable_ssl: false,
+        },
+        &config.database,
+    );
+    #[cfg(feature = "db-sqlx")]
+    assert_debug_equal(
+        AnyConnectOptions::from(
+            PgConnectOptions::new()
+                .host("pg.example.com")
+                .username("redacted")
+                .password("redacted")
+                .database("nextcloud"),
+        ),
         config.database.into(),
     );
 }
