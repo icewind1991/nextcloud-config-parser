@@ -82,8 +82,7 @@ fn merge_configs(input: Vec<(PathBuf, Value)>) -> Result<Value> {
     Ok(Value::Array(merged))
 }
 
-pub fn parse(path: impl AsRef<Path>) -> Result<Config> {
-    let files = glob_config_files(path);
+fn parse_files(files: Vec<PathBuf>) -> Result<Config> {
     let parsed_files = files
         .into_iter()
         .map(|path| {
@@ -112,6 +111,14 @@ pub fn parse(path: impl AsRef<Path>) -> Result<Config> {
         #[cfg(feature = "redis-connect")]
         redis,
     })
+}
+
+pub fn parse(path: impl AsRef<Path>) -> Result<Config> {
+    parse_files(glob_config_files(path))
+}
+
+pub fn parse_glob(path: impl AsRef<Path>) -> Result<Config> {
+    parse_files(glob_config_files(path))
 }
 
 fn parse_db_options(parsed: &Value) -> Result<Database> {
@@ -546,7 +553,7 @@ fn test_parse_redis_cluster() {
 
 #[test]
 fn test_parse_config_multiple() {
-    let config = config_from_file("tests/configs/multiple/config.php");
+    let config = parse_glob("tests/configs/multiple/config.php").unwrap();
     assert_eq!("https://cloud.example.com", config.nextcloud_url);
     assert_eq!("oc_", config.database_prefix);
     assert_debug_equal(

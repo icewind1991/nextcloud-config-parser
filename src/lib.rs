@@ -7,7 +7,7 @@ use std::iter::once;
 use std::path::PathBuf;
 use thiserror::Error;
 
-pub use nc::parse;
+pub use nc::{parse, parse_glob};
 use std::fmt::{Display, Formatter};
 
 #[derive(Debug)]
