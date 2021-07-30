@@ -585,6 +585,29 @@ fn test_parse_config_multiple() {
 }
 
 #[test]
+fn test_parse_config_multiple_no_glob() {
+    let config = config_from_file("tests/configs/multiple/config.php");
+    assert_eq!("https://cloud.example.com", config.nextcloud_url);
+    assert_eq!("oc_", config.database_prefix);
+    assert_debug_equal(
+        &Database::Sqlite {
+            database: "/nc/nextcloud.db".into(),
+        },
+        &config.database,
+    );
+    #[cfg(feature = "db-sqlx")]
+    assert_debug_equal(
+        AnyConnectOptions::from_str("sqlite:///nc/nextcloud.db").unwrap(),
+        config.database.into(),
+    );
+    #[cfg(feature = "redis-connect")]
+    assert_debug_equal(
+        RedisConfig::Single(ConnectionInfo::from_str("redis://127.0.0.1").unwrap()),
+        config.redis,
+    );
+}
+
+#[test]
 fn test_parse_config_mysql_fqdn() {
     let config = config_from_file("tests/configs/mysql_fqdn.php");
     assert_debug_equal(

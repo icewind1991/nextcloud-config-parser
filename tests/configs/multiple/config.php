@@ -5,5 +5,7 @@ $CONFIG = [
 	'redis' => [
 		'host' => 'localhost'
 	],
-	'dbtype' => 'sqlite',
+	'dbtype' => 'sqlite3',
+	'dbname' => 'nextcloud',
+	'datadirectory' => '/nc'
 ];
