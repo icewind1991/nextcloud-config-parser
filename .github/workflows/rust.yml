@@ -20,6 +20,14 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: check
+          args: --features=db-sqlx
+      - uses: actions-rs/cargo@v1
+        with:
+          command: check
+          args: --features=redis-connect
+      - uses: actions-rs/cargo@v1
+        with:
+          command: check
           args: --all-features
 
   test:
