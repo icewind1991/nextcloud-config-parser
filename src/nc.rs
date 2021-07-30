@@ -3,7 +3,7 @@ use crate::RedisConfig;
 use crate::{Config, Database, DbConnect, DbError, Error, NotAConfigError, PhpParseError, Result};
 use php_literal_parser::Value;
 #[cfg(feature = "redis-connect")]
-use redis::{ConnectionAddr, ConnectionInfo};
+use redis::{ConnectionAddr, ConnectionInfo, RedisConnectionInfo};
 use std::collections::HashMap;
 use std::fs::DirEntry;
 use std::iter::once;
@@ -350,7 +350,6 @@ fn assert_debug_equal<T: Debug>(a: T, b: T) {
     assert_eq!(format!("{:?}", a), format!("{:?}", b),);
 }
 
-use redis::RedisConnectionInfo;
 #[cfg(test)]
 #[allow(unused_imports)]
 use sqlx::{any::AnyConnectOptions, postgres::PgConnectOptions};

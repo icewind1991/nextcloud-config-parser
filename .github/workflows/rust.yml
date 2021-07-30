@@ -17,6 +17,9 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: check
+      - uses: actions-rs/cargo@v1
+        with:
+          command: check
           args: --all-features
 
   test:
@@ -31,6 +34,9 @@ jobs:
           toolchain: stable
           override: true
       - uses: Swatinem/rust-cache@v1
+      - uses: actions-rs/cargo@v1
+        with:
+          command: test
       - uses: actions-rs/cargo@v1
         with:
           command: test
