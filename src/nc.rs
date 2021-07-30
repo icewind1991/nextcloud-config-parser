@@ -36,7 +36,7 @@ fn glob_config_files(path: impl AsRef<Path>) -> impl Iterator<Item = PathBuf> {
         None
     };
 
-    once(main).chain(files.into_iter().flat_map(|files| files))
+    once(main).chain(files.into_iter().flatten())
 }
 
 fn parse_php(path: impl AsRef<Path>) -> Result<Value> {
