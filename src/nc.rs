@@ -5,6 +5,8 @@ use php_literal_parser::Value;
 #[cfg(feature = "redis-connect")]
 use redis::{ConnectionAddr, ConnectionInfo};
 use std::collections::HashMap;
+use std::fs::DirEntry;
+use std::iter::once;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -16,22 +18,25 @@ static CONFIG_CONSTANTS: &[(&str, &str)] = &[
     (r"\RedisCluster::FAILOVER_DISTRIBUTE_SLAVES", "3"),
 ];
 
-fn glob_config_files(path: impl AsRef<Path>) -> Vec<PathBuf> {
-    let mut configs = vec![path.as_ref().into()];
-    if let Some(parent) = path.as_ref().parent() {
+fn glob_config_files(path: impl AsRef<Path>) -> impl Iterator<Item = PathBuf> {
+    let main: PathBuf = path.as_ref().into();
+    let files = if let Some(parent) = path.as_ref().parent() {
         if let Ok(dir) = parent.read_dir() {
-            for file in dir.filter_map(Result::ok) {
+            Some(dir.filter_map(Result::ok).filter_map(|file: DirEntry| {
                 let path = file.path();
                 match path.to_str() {
-                    Some(path_str) if path_str.ends_with(".config.php") => {
-                        configs.push(path);
-                    }
-                    _ => {}
+                    Some(path_str) if path_str.ends_with(".config.php") => Some(path),
+                    _ => None,
                 }
-            }
+            }))
+        } else {
+            None
         }
-    }
-    configs
+    } else {
+        None
+    };
+
+    once(main).chain(files.into_iter().flat_map(|files| files))
 }
 
 fn parse_php(path: impl AsRef<Path>) -> Result<Value> {
@@ -82,7 +87,7 @@ fn merge_configs(input: Vec<(PathBuf, Value)>) -> Result<Value> {
     Ok(Value::Array(merged))
 }
 
-fn parse_files(files: Vec<PathBuf>) -> Result<Config> {
+fn parse_files(files: impl IntoIterator<Item = PathBuf>) -> Result<Config> {
     let parsed_files = files
         .into_iter()
         .map(|path| {
@@ -114,7 +119,7 @@ fn parse_files(files: Vec<PathBuf>) -> Result<Config> {
 }
 
 pub fn parse(path: impl AsRef<Path>) -> Result<Config> {
-    parse_files(vec![path.as_ref().into()])
+    parse_files(once(path.as_ref().into()))
 }
 
 pub fn parse_glob(path: impl AsRef<Path>) -> Result<Config> {
