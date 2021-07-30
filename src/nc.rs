@@ -114,7 +114,7 @@ fn parse_files(files: Vec<PathBuf>) -> Result<Config> {
 }
 
 pub fn parse(path: impl AsRef<Path>) -> Result<Config> {
-    parse_files(glob_config_files(path))
+    parse_files(vec![path.as_ref().into()])
 }
 
 pub fn parse_glob(path: impl AsRef<Path>) -> Result<Config> {
