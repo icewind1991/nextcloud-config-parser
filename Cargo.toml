@@ -1,7 +1,7 @@
 [package]
 name = "nextcloud-config-parser"
 description = "Rust parser for nextcloud config files"
-version = "0.2.3"
+version = "0.3.0"
 authors = ["Robin Appelman <robin@icewind.nl>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
@@ -9,7 +9,7 @@ repository = "https://github.com/icewind1991/nextcloud-config-parser"
 documentation = "https://docs.rs/nextcloud-config-parser"
 
 [dependencies]
-redis = { version = "0.20", optional = true }
+redis = { version = "0.21", optional = true }
 thiserror = "1"
 php-literal-parser =  { version = "0.2", default-features = false }
 sqlx = { version = "0.5", features = ["any", "mysql", "sqlite", "postgres"], optional = true }

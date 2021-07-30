@@ -298,26 +298,30 @@ fn parse_redis_options(parsed: &Value) -> RedisConfig {
     };
 
     let db = redis_options["dbindex"].clone().into_int().unwrap_or(0);
-    let passwd = redis_options["password"]
+    let password = redis_options["password"]
         .as_str()
         .filter(|pass| !pass.is_empty())
         .map(String::from);
 
     match address {
         RedisAddress::Single(addr) => RedisConfig::Single(ConnectionInfo {
-            addr: Box::new(addr),
-            db,
-            username: None,
-            passwd,
+            addr,
+            redis: RedisConnectionInfo {
+                db,
+                username: None,
+                password,
+            },
         }),
         RedisAddress::Cluster(addresses) => RedisConfig::Cluster(
             addresses
                 .into_iter()
                 .map(|addr| ConnectionInfo {
-                    addr: Box::new(addr),
-                    db,
-                    username: None,
-                    passwd: passwd.clone(),
+                    addr,
+                    redis: RedisConnectionInfo {
+                        db,
+                        username: None,
+                        password: password.clone(),
+                    },
                 })
                 .collect(),
         ),
@@ -346,6 +350,7 @@ fn assert_debug_equal<T: Debug>(a: T, b: T) {
     assert_eq!(format!("{:?}", a), format!("{:?}", b),);
 }
 
+use redis::RedisConnectionInfo;
 #[cfg(test)]
 #[allow(unused_imports)]
 use sqlx::{any::AnyConnectOptions, postgres::PgConnectOptions};

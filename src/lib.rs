@@ -30,35 +30,37 @@ pub enum RedisConfig {
 impl RedisConfig {
     pub fn addr(&self) -> impl Iterator<Item = &ConnectionAddr> {
         let boxed: Box<dyn Iterator<Item = &ConnectionAddr>> = match self {
-            RedisConfig::Single(conn) => Box::new(once(conn.addr.as_ref())),
-            RedisConfig::Cluster(conns) => Box::new(conns.iter().map(|conn| conn.addr.as_ref())),
+            RedisConfig::Single(conn) => Box::new(once(&conn.addr)),
+            RedisConfig::Cluster(conns) => Box::new(conns.iter().map(|conn| &conn.addr)),
         };
         boxed
     }
 
     pub fn db(&self) -> i64 {
         match self {
-            RedisConfig::Single(conn) => conn.db,
-            RedisConfig::Cluster(conns) => conns.first().map(|conn| conn.db).unwrap_or_default(),
+            RedisConfig::Single(conn) => conn.redis.db,
+            RedisConfig::Cluster(conns) => {
+                conns.first().map(|conn| conn.redis.db).unwrap_or_default()
+            }
         }
     }
 
     pub fn username(&self) -> Option<&str> {
         match self {
-            RedisConfig::Single(conn) => conn.username.as_deref(),
+            RedisConfig::Single(conn) => conn.redis.username.as_deref(),
             RedisConfig::Cluster(conns) => conns
                 .first()
-                .map(|conn| conn.username.as_deref())
+                .map(|conn| conn.redis.username.as_deref())
                 .unwrap_or_default(),
         }
     }
 
     pub fn passwd(&self) -> Option<&str> {
         match self {
-            RedisConfig::Single(conn) => conn.passwd.as_deref(),
+            RedisConfig::Single(conn) => conn.redis.password.as_deref(),
             RedisConfig::Cluster(conns) => conns
                 .first()
-                .map(|conn| conn.passwd.as_deref())
+                .map(|conn| conn.redis.password.as_deref())
                 .unwrap_or_default(),
         }
     }
