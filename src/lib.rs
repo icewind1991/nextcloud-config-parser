@@ -128,6 +128,18 @@ pub enum NotAConfigError {
 }
 
 #[derive(Debug)]
+pub enum SslOptions {
+    Enabled {
+        key: String,
+        cert: String,
+        ca: String,
+        verify: bool,
+    },
+    Disabled,
+    Default,
+}
+
+#[derive(Debug)]
 pub enum Database {
     Sqlite {
         database: PathBuf,
@@ -137,14 +149,14 @@ pub enum Database {
         username: String,
         password: String,
         connect: DbConnect,
-        disable_ssl: bool,
+        ssl_options: SslOptions,
     },
     Postgres {
         database: String,
         username: String,
         password: String,
         connect: DbConnect,
-        disable_ssl: bool,
+        ssl_options: SslOptions,
     },
 }
 
@@ -172,14 +184,25 @@ impl From<Database> for sqlx::any::AnyConnectOptions {
                 username,
                 password,
                 connect,
-                disable_ssl,
+                ssl_options,
             } => {
                 let mut options = MySqlConnectOptions::default()
                     .database(&database)
                     .username(&username)
                     .password(&password);
-                if disable_ssl {
-                    options = options.ssl_mode(MySqlSslMode::Disabled);
+                match ssl_options {
+                    SslOptions::Enabled { ca, verify, .. } => {
+                        options = options.ssl_ca(ca);
+                        options = options.ssl_mode(if verify {
+                            MySqlSslMode::VerifyIdentity
+                        } else {
+                            MySqlSslMode::VerifyCa
+                        });
+                    }
+                    SslOptions::Disabled => {
+                        options = options.ssl_mode(MySqlSslMode::Disabled);
+                    }
+                    SslOptions::Default => {}
                 }
                 match connect {
                     DbConnect::Socket(socket) => {
@@ -196,13 +219,13 @@ impl From<Database> for sqlx::any::AnyConnectOptions {
                 username,
                 password,
                 connect,
-                disable_ssl,
+                ssl_options,
             } => {
                 let mut options = PgConnectOptions::default()
                     .database(&database)
                     .username(&username)
                     .password(&password);
-                if disable_ssl {
+                if matches!(ssl_options, SslOptions::Disabled) {
                     options = options.ssl_mode(PgSslMode::Disable);
                 }
                 match connect {

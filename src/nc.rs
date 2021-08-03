@@ -1,6 +1,8 @@
 #[cfg(feature = "redis-connect")]
 use crate::RedisConfig;
-use crate::{Config, Database, DbConnect, DbError, Error, NotAConfigError, PhpParseError, Result};
+use crate::{
+    Config, Database, DbConnect, DbError, Error, NotAConfigError, PhpParseError, Result, SslOptions,
+};
 use php_literal_parser::Value;
 #[cfg(feature = "redis-connect")]
 use redis::{ConnectionAddr, ConnectionInfo, RedisConnectionInfo};
@@ -16,6 +18,10 @@ static CONFIG_CONSTANTS: &[(&str, &str)] = &[
     (r"\RedisCluster::FAILOVER_ERROR", "1"),
     (r"\RedisCluster::DISTRIBUTE", "2"),
     (r"\RedisCluster::FAILOVER_DISTRIBUTE_SLAVES", "3"),
+    (r"\PDO::MYSQL_ATTR_SSL_KEY", "1007"),
+    (r"\PDO::MYSQL_ATTR_SSL_CERT", "1008"),
+    (r"\PDO::MYSQL_ATTR_SSL_CA", "1009"),
+    (r"\PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT", "1014"),
 ];
 
 fn glob_config_files(path: impl AsRef<Path>) -> impl Iterator<Item = PathBuf> {
@@ -174,12 +180,35 @@ fn parse_db_options(parsed: &Value) -> Result<Database> {
             }
             let database = parsed["dbname"].as_str().ok_or(DbError::NoName)?;
 
+            let verify = parsed["dbdriveroptions"][1014] // MYSQL_ATTR_SSL_VERIFY_SERVER_CERT
+                .clone()
+                .into_bool()
+                .unwrap_or(true);
+
+            let ssl_options = if let (Some(ssl_key), Some(ssl_cert), Some(ssl_ca)) = (
+                parsed["dbdriveroptions"][1007].as_str(), // MYSQL_ATTR_SSL_KEY
+                parsed["dbdriveroptions"][1008].as_str(), // MYSQL_ATTR_SSL_CERT
+                parsed["dbdriveroptions"][1009].as_str(), // MYSQL_ATTR_SSL_CA
+            ) {
+                SslOptions::Enabled {
+                    key: ssl_key.into(),
+                    cert: ssl_cert.into(),
+                    ca: ssl_ca.into(),
+                    verify,
+                }
+                // if MYSQL_ATTR_SSL_VERIFY_SERVER_CERT is disabled, we should be able to use ssl even with raw ip
+            } else if disable_ssl && verify {
+                SslOptions::Disabled
+            } else {
+                SslOptions::Default
+            };
+
             Ok(Database::MySql {
                 database: database.into(),
                 username: username.into(),
                 password: password.into(),
                 connect,
-                disable_ssl,
+                ssl_options,
             })
         }
         Some("pgsql") => {
@@ -228,12 +257,18 @@ fn parse_db_options(parsed: &Value) -> Result<Database> {
             }
             let database = parsed["dbname"].as_str().ok_or(DbError::NoName)?;
 
+            let ssl_options = if disable_ssl {
+                SslOptions::Disabled
+            } else {
+                SslOptions::Default
+            };
+
             Ok(Database::Postgres {
                 database: database.into(),
                 username: username.into(),
                 password: password.into(),
                 connect,
-                disable_ssl,
+                ssl_options,
             })
         }
         Some("sqlite3") => {
@@ -375,7 +410,7 @@ fn test_parse_config_basic() {
                 host: "127.0.0.1".to_string(),
                 port: 3306,
             },
-            disable_ssl: true,
+            ssl_options: SslOptions::Disabled,
         },
         &config.database,
     );
@@ -444,7 +479,7 @@ fn test_parse_comment_whitespace() {
                 host: "127.0.0.1".to_string(),
                 port: 3306,
             },
-            disable_ssl: true,
+            ssl_options: SslOptions::Disabled,
         },
         &config.database,
     );
@@ -475,7 +510,7 @@ fn test_parse_port_in_host() {
                 host: "127.0.0.1".to_string(),
                 port: 1234,
             },
-            disable_ssl: true,
+            ssl_options: SslOptions::Disabled,
         },
         &config.database,
     );
@@ -498,7 +533,7 @@ fn test_parse_postgres_socket() {
             username: "redacted".to_string(),
             password: "redacted".to_string(),
             connect: DbConnect::Socket("/var/run/postgresql".into()),
-            disable_ssl: false,
+            ssl_options: SslOptions::Default,
         },
         &config.database,
     );
@@ -524,7 +559,7 @@ fn test_parse_postgres_socket_folder() {
             username: "redacted".to_string(),
             password: "redacted".to_string(),
             connect: DbConnect::Socket("/var/run/postgresql".into()),
-            disable_ssl: false,
+            ssl_options: SslOptions::Default,
         },
         &config.database,
     );
@@ -574,7 +609,7 @@ fn test_parse_config_multiple() {
                 host: "127.0.0.1".to_string(),
                 port: 3306,
             },
-            disable_ssl: true,
+            ssl_options: SslOptions::Disabled,
         },
         &config.database,
     );
@@ -628,7 +663,7 @@ fn test_parse_config_mysql_fqdn() {
                 host: "db.example.com".to_string(),
                 port: 3306,
             },
-            disable_ssl: false,
+            ssl_options: SslOptions::Default,
         },
         &config.database,
     );
@@ -638,6 +673,94 @@ fn test_parse_config_mysql_fqdn() {
             "mysql://nextcloud:secret@db.example.com/nextcloud?ssl-mode=preferred",
         )
         .unwrap(),
+        config.database.into(),
+    );
+}
+
+#[test]
+fn test_parse_config_mysql_ip_no_verify() {
+    let config = config_from_file("tests/configs/mysql_ip_no_verify.php");
+    assert_debug_equal(
+        &Database::MySql {
+            database: "nextcloud".to_string(),
+            username: "nextcloud".to_string(),
+            password: "secret".to_string(),
+            connect: DbConnect::Tcp {
+                host: "1.2.3.4".to_string(),
+                port: 3306,
+            },
+            ssl_options: SslOptions::Default,
+        },
+        &config.database,
+    );
+    #[cfg(feature = "db-sqlx")]
+    assert_debug_equal(
+        AnyConnectOptions::from_str(
+            "mysql://nextcloud:secret@1.2.3.4/nextcloud?ssl-mode=preferred",
+        )
+        .unwrap(),
+        config.database.into(),
+    );
+}
+
+#[test]
+fn test_parse_config_mysql_ssl_ca() {
+    let config = config_from_file("tests/configs/mysql_ssl_ca.php");
+    assert_debug_equal(
+        &Database::MySql {
+            database: "nextcloud".to_string(),
+            username: "nextcloud".to_string(),
+            password: "secret".to_string(),
+            connect: DbConnect::Tcp {
+                host: "db.example.com".to_string(),
+                port: 3306,
+            },
+            ssl_options: SslOptions::Enabled {
+                key: "/ssl-key.pem".into(),
+                cert: "/ssl-cert.pem".into(),
+                ca: "/ca-cert.pem".into(),
+                verify: true,
+            },
+        },
+        &config.database,
+    );
+    #[cfg(feature = "db-sqlx")]
+    assert_debug_equal(
+        AnyConnectOptions::from_str(
+            "mysql://nextcloud:secret@db.example.com/nextcloud?ssl-mode=verify_identity&ssl-ca=/ca-cert.pem",
+        )
+        .unwrap(),
+        config.database.into(),
+    );
+}
+
+#[test]
+fn test_parse_config_mysql_ssl_ca_no_verify() {
+    let config = config_from_file("tests/configs/mysql_ssl_ca_no_verify.php");
+    assert_debug_equal(
+        &Database::MySql {
+            database: "nextcloud".to_string(),
+            username: "nextcloud".to_string(),
+            password: "secret".to_string(),
+            connect: DbConnect::Tcp {
+                host: "db.example.com".to_string(),
+                port: 3306,
+            },
+            ssl_options: SslOptions::Enabled {
+                key: "/ssl-key.pem".into(),
+                cert: "/ssl-cert.pem".into(),
+                ca: "/ca-cert.pem".into(),
+                verify: false,
+            },
+        },
+        &config.database,
+    );
+    #[cfg(feature = "db-sqlx")]
+        assert_debug_equal(
+        AnyConnectOptions::from_str(
+            "mysql://nextcloud:secret@db.example.com/nextcloud?ssl-mode=verify_ca&ssl-ca=/ca-cert.pem",
+        )
+            .unwrap(),
         config.database.into(),
     );
 }
@@ -654,7 +777,7 @@ fn test_parse_postgres_ip() {
                 host: "1.2.3.4".to_string(),
                 port: 5432,
             },
-            disable_ssl: true,
+            ssl_options: SslOptions::Disabled,
         },
         &config.database,
     );
@@ -684,7 +807,7 @@ fn test_parse_postgres_fqdn() {
                 host: "pg.example.com".to_string(),
                 port: 5432,
             },
-            disable_ssl: false,
+            ssl_options: SslOptions::Default,
         },
         &config.database,
     );
