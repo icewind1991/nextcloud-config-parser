@@ -271,7 +271,7 @@ fn parse_db_options(parsed: &Value) -> Result<Database> {
                 ssl_options,
             })
         }
-        Some("sqlite3" | "sqlite") => {
+        Some("sqlite3" | "sqlite") | None => {
             let data_dir = parsed["datadirectory"]
                 .as_str()
                 .ok_or(DbError::NoDataDirectory)?;
@@ -281,7 +281,6 @@ fn parse_db_options(parsed: &Value) -> Result<Database> {
             })
         }
         Some(ty) => Err(Error::InvalidDb(DbError::Unsupported(ty.into()))),
-        None => Err(Error::NoDb),
     }
 }
 

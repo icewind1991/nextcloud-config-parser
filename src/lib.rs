@@ -85,8 +85,6 @@ pub enum Error {
     ReadFailed(std::io::Error, PathBuf),
     #[error("invalid database configuration: {0}")]
     InvalidDb(#[from] DbError),
-    #[error("no database configuration")]
-    NoDb,
     #[error("Invalid redis configuration")]
     Redis,
     #[error("`overwrite.cli.url` not set`")]
