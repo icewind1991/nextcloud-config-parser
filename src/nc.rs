@@ -271,7 +271,7 @@ fn parse_db_options(parsed: &Value) -> Result<Database> {
                 ssl_options,
             })
         }
-        Some("sqlite3" | "sqlite") | None => {
+        Some("sqlite3") | Some("sqlite") | None => {
             let data_dir = parsed["datadirectory"]
                 .as_str()
                 .ok_or(DbError::NoDataDirectory)?;
