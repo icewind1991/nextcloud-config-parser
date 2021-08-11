@@ -178,7 +178,7 @@ fn parse_db_options(parsed: &Value) -> Result<Database> {
                     *connect_port = port as u16;
                 }
             }
-            let database = parsed["dbname"].as_str().ok_or(DbError::NoName)?;
+            let database = parsed["dbname"].as_str().unwrap_or("owncloud");
 
             let verify = parsed["dbdriveroptions"][1014] // MYSQL_ATTR_SSL_VERIFY_SERVER_CERT
                 .clone()
@@ -255,7 +255,7 @@ fn parse_db_options(parsed: &Value) -> Result<Database> {
                     *connect_port = port as u16;
                 }
             }
-            let database = parsed["dbname"].as_str().ok_or(DbError::NoName)?;
+            let database = parsed["dbname"].as_str().unwrap_or("owncloud");
 
             let ssl_options = if disable_ssl {
                 SslOptions::Disabled
@@ -271,9 +271,11 @@ fn parse_db_options(parsed: &Value) -> Result<Database> {
                 ssl_options,
             })
         }
-        Some("sqlite3") => {
-            let data_dir = parsed["datadirectory"].as_str().ok_or(DbError::NoName)?;
-            let db_name = parsed["dbname"].as_str().ok_or(DbError::NoName)?;
+        Some("sqlite3" | "sqlite") => {
+            let data_dir = parsed["datadirectory"]
+                .as_str()
+                .ok_or(DbError::NoDataDirectory)?;
+            let db_name = parsed["dbname"].as_str().unwrap_or("owncloud");
             Ok(Database::Sqlite {
                 database: format!("{}/{}.db", data_dir, db_name).into(),
             })
@@ -821,5 +823,16 @@ fn test_parse_postgres_fqdn() {
                 .database("nextcloud"),
         ),
         config.database.into(),
+    );
+}
+
+#[test]
+fn test_parse_config_sqlite_default_db() {
+    let config = config_from_file("tests/configs/sqlite_default_db.php");
+    assert_debug_equal(
+        &Database::Sqlite {
+            database: "/nc/data/owncloud.db".into(),
+        },
+        &config.database,
     );
 }

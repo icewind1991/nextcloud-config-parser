@@ -115,8 +115,8 @@ pub enum DbError {
     NoUsername,
     #[error("no password set")]
     NoPassword,
-    #[error("no database name")]
-    NoName,
+    #[error("no data directory")]
+    NoDataDirectory,
 }
 
 #[derive(Debug, Error)]
