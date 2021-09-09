@@ -69,7 +69,6 @@ fn parse_php(path: impl AsRef<Path>) -> Result<Value> {
         Error::Php(PhpParseError {
             err,
             path: path.as_ref().into(),
-            source: php.into(),
         })
     })
 }
@@ -831,6 +830,26 @@ fn test_parse_config_sqlite_default_db() {
     assert_debug_equal(
         &Database::Sqlite {
             database: "/nc/data/owncloud.db".into(),
+        },
+        &config.database,
+    );
+}
+
+#[test]
+fn test_parse_config_nested_array() {
+    let config = config_from_file("tests/configs/nested_array.php");
+    assert_eq!("https://cloud.example.com", config.nextcloud_url);
+    assert_eq!("oc_", config.database_prefix);
+    assert_debug_equal(
+        &Database::MySql {
+            database: "nextcloud".to_string(),
+            username: "nextcloud".to_string(),
+            password: "secret".to_string(),
+            connect: DbConnect::Tcp {
+                host: "127.0.0.1".to_string(),
+                port: 3306,
+            },
+            ssl_options: SslOptions::Disabled,
         },
         &config.database,
     );

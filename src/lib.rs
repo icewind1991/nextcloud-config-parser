@@ -8,7 +8,6 @@ use std::path::PathBuf;
 use thiserror::Error;
 
 pub use nc::{parse, parse_glob};
-use std::fmt::{Display, Formatter};
 
 #[derive(Debug)]
 pub struct Config {
@@ -77,7 +76,7 @@ type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Error while parsing php literal: {0:#}")]
+    #[error("{0:#}")]
     Php(PhpParseError),
     #[error("Provided config file doesn't seem to be a nextcloud config file: {0:#}")]
     NotAConfig(#[from] NotAConfigError),
@@ -91,18 +90,11 @@ pub enum Error {
     NoUrl,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
+#[error("Error while parsing '{path}':\n{err}")]
 pub struct PhpParseError {
     err: php_literal_parser::ParseError,
-    source: String,
     path: PathBuf,
-}
-
-impl Display for PhpParseError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let err = self.err.clone().with_source(&self.source);
-        write!(f, "{}", err)
-    }
 }
 
 #[derive(Debug, Error)]
