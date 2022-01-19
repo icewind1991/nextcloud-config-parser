@@ -1,5 +1,6 @@
 mod nc;
 
+use miette::Diagnostic;
 #[cfg(feature = "redis-connect")]
 use redis::{ConnectionAddr, ConnectionInfo};
 #[cfg(feature = "redis-connect")]
@@ -74,9 +75,10 @@ impl RedisConfig {
 
 type Result<T, E = Error> = std::result::Result<T, E>;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Diagnostic)]
 pub enum Error {
-    #[error("{0:#}")]
+    #[error(transparent)]
+    #[diagnostic(transparent)]
     Php(PhpParseError),
     #[error("Provided config file doesn't seem to be a nextcloud config file: {0:#}")]
     NotAConfig(#[from] NotAConfigError),
@@ -90,8 +92,9 @@ pub enum Error {
     NoUrl,
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Diagnostic)]
 #[error("Error while parsing '{path}':\n{err}")]
+#[diagnostic(forward(err))]
 pub struct PhpParseError {
     err: php_literal_parser::ParseError,
     path: PathBuf,

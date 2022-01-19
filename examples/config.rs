@@ -1,12 +1,8 @@
+use miette::Result;
 use nextcloud_config_parser::parse;
 
-fn main() {
-    let config = match parse("tests/configs/basic.php") {
-        Ok(config) => config,
-        Err(err) => {
-            eprintln!("{}", err);
-            return;
-        }
-    };
+fn main() -> Result<()> {
+    let config = parse("tests/configs/basic.php")?;
     dbg!(config);
+    Ok(())
 }
