@@ -1,9 +1,9 @@
 [package]
 name = "nextcloud-config-parser"
 description = "Rust parser for nextcloud config files"
-version = "0.5.0"
+version = "0.6.0"
 authors = ["Robin Appelman <robin@icewind.nl>"]
-edition = "2018"
+edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/icewind1991/nextcloud-config-parser"
 documentation = "https://docs.rs/nextcloud-config-parser"
@@ -12,11 +12,11 @@ documentation = "https://docs.rs/nextcloud-config-parser"
 redis = { version = "0.21", optional = true }
 thiserror = "1"
 php-literal-parser = "0.4"
-sqlx = { version = "0.5", features = ["any", "mysql", "sqlite", "postgres"], optional = true }
+sqlx = { version = "0.6", default-features = false, features = ["runtime-tokio-rustls", "any", "mysql", "sqlite", "postgres"], optional = true }
 miette = "3"
 
 [dev-dependencies]
-sqlx = { version = "0.5", features = ["runtime-tokio-rustls", "any", "mysql", "sqlite", "postgres"] }
+sqlx = { version = "0.6", default-features = false, features = ["runtime-tokio-rustls", "any", "mysql", "sqlite", "postgres"] }
 miette = { version = "3", features = ["fancy"] }
 
 [features]
