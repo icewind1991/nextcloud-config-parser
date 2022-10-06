@@ -7,18 +7,18 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/icewind1991/nextcloud-config-parser"
 documentation = "https://docs.rs/nextcloud-config-parser"
-rust-version = "1.56"
+rust-version = "1.58"
 
 [dependencies]
-redis = { version = "0.21", optional = true, default-features = false }
-thiserror = "1"
-php-literal-parser = "0.4"
-sqlx = { version = "0.6", default-features = false, features = ["runtime-tokio-rustls", "any", "mysql", "sqlite", "postgres"], optional = true }
-miette = "3"
+redis = { version = "0.21.6", optional = true, default-features = false }
+thiserror = "1.0.37"
+php-literal-parser = "0.5.0"
+sqlx = { version = "0.6.2", default-features = false, features = ["runtime-tokio-rustls", "any", "mysql", "sqlite", "postgres"], optional = true }
+miette = "5.3.0"
 
 [dev-dependencies]
-sqlx = { version = "0.6", default-features = false, features = ["runtime-tokio-rustls", "any", "mysql", "sqlite", "postgres"] }
-miette = { version = "3", features = ["fancy"] }
+sqlx = { version = "0.6.2", default-features = false, features = ["runtime-tokio-rustls", "any", "mysql", "sqlite", "postgres"] }
+miette = { version = "5.3.0", features = ["fancy"] }
 
 [features]
 db-sqlx = ["sqlx"]
