@@ -12,6 +12,7 @@ $CONFIG = [
 		'host' => 'redis',
 		'dbindex' => 1,
 		'port' => 1234,
+		'user' => 'name',
 		'password' => 'moresecret'
 	]
 ];

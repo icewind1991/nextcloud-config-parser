@@ -337,13 +337,17 @@ fn parse_redis_options(parsed: &Value) -> RedisConfig {
         .as_str()
         .filter(|pass| !pass.is_empty())
         .map(String::from);
+    let username = redis_options["user"]
+        .as_str()
+        .filter(|user| !user.is_empty())
+        .map(String::from);
 
     match address {
         RedisAddress::Single(addr) => RedisConfig::Single(ConnectionInfo {
             addr,
             redis: RedisConnectionInfo {
                 db,
-                username: None,
+                username,
                 password,
             },
         }),
@@ -354,7 +358,7 @@ fn parse_redis_options(parsed: &Value) -> RedisConfig {
                     addr,
                     redis: RedisConnectionInfo {
                         db,
-                        username: None,
+                        username: username.clone(),
                         password: password.clone(),
                     },
                 })
@@ -450,7 +454,9 @@ fn test_parse_empty_redis_password() {
 fn test_parse_full_redis() {
     let config = config_from_file("tests/configs/full_redis.php");
     assert_debug_equal(
-        RedisConfig::Single(ConnectionInfo::from_str("redis://:moresecret@redis:1234/1").unwrap()),
+        RedisConfig::Single(
+            ConnectionInfo::from_str("redis://name:moresecret@redis:1234/1").unwrap(),
+        ),
         config.redis,
     );
 }
