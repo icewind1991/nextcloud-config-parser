@@ -65,12 +65,20 @@ fn parse_php(path: impl AsRef<Path>) -> Result<Value> {
             )));
         }
     };
-    php_literal_parser::from_str(php).map_err(|err| {
-        Error::Php(PhpParseError {
-            err,
-            path: path.as_ref().into(),
-        })
-    })
+    match php_literal_parser::from_str(php) {
+        Ok(config) => Ok(config),
+        Err(err) => {
+            // attempt parsing the config file with php
+            if let Ok(config) = try_exec_config(&path) {
+                Ok(config)
+            } else {
+                Err(Error::Php(PhpParseError {
+                    err,
+                    path: path.as_ref().into(),
+                }))
+            }
+        }
+    }
 }
 
 fn merge_configs(input: Vec<(PathBuf, Value)>) -> Result<Value> {
@@ -131,7 +139,7 @@ pub fn parse_glob(path: impl AsRef<Path>) -> Result<Config> {
     parse_files(glob_config_files(path))
 }
 
-fn parse_db_options(parsed: &Value) -> Result<Database> {
+pub(crate) fn parse_db_options(parsed: &Value) -> Result<Database> {
     match parsed["dbtype"].as_str() {
         Some("mysql") => {
             let username = parsed["dbuser"].as_str().ok_or(DbError::NoUsername)?;
@@ -384,16 +392,11 @@ fn test_redis_empty_password_none() {
 }
 
 #[cfg(test)]
-#[track_caller]
-fn assert_debug_equal<T: Debug>(a: T, b: T) {
-    assert_eq!(format!("{:?}", a), format!("{:?}", b),);
-}
-
+use crate::assert_debug_equal;
+use crate::php::try_exec_config;
 #[cfg(test)]
 #[allow(unused_imports)]
 use sqlx::{any::AnyConnectOptions, postgres::PgConnectOptions};
-#[cfg(test)]
-use std::fmt::Debug;
 
 #[cfg(test)]
 fn config_from_file(path: &str) -> Config {

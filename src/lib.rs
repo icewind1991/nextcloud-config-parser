@@ -1,8 +1,10 @@
 mod nc;
+mod php;
 
 use miette::Diagnostic;
 #[cfg(feature = "redis-connect")]
 use redis::{ConnectionAddr, ConnectionInfo};
+use std::fmt::Debug;
 #[cfg(feature = "redis-connect")]
 use std::iter::once;
 use std::path::PathBuf;
@@ -90,6 +92,8 @@ pub enum Error {
     Redis,
     #[error("`overwrite.cli.url` not set`")]
     NoUrl,
+    #[error("Failed to execute php to parse configuration")]
+    Exec,
 }
 
 #[derive(Debug, Error, Diagnostic)]
@@ -233,4 +237,10 @@ impl From<Database> for sqlx::any::AnyConnectOptions {
             }
         }
     }
+}
+
+#[cfg(test)]
+#[track_caller]
+pub fn assert_debug_equal<T: Debug>(a: T, b: T) {
+    assert_eq!(format!("{:?}", a), format!("{:?}", b),);
 }
