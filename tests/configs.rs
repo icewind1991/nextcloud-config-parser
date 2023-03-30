@@ -178,6 +178,31 @@ fn test_parse_postgres_socket() {
 }
 
 #[test]
+fn test_parse_postgres_socket_no_pass() {
+    let config = config_from_file("tests/configs/postgres_socket_no_pass.php");
+    assert_debug_equal(
+        &Database::Postgres {
+            database: "nextcloud".to_string(),
+            username: "redacted".to_string(),
+            password: "".to_string(),
+            connect: DbConnect::Socket("/var/run/postgresql".into()),
+            ssl_options: SslOptions::Default,
+        },
+        &config.database,
+    );
+    #[cfg(feature = "db-sqlx")]
+    assert_debug_equal(
+        AnyConnectOptions::from(
+            PgConnectOptions::new()
+                .socket("/var/run/postgresql")
+                .username("redacted")
+                .database("nextcloud"),
+        ),
+        config.database.into(),
+    );
+}
+
+#[test]
 fn test_parse_postgres_socket_folder() {
     let config = config_from_file("tests/configs/postgres_socket_folder.php");
     assert_debug_equal(

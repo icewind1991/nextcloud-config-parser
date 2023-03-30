@@ -216,8 +216,12 @@ impl From<Database> for sqlx::any::AnyConnectOptions {
             } => {
                 let mut options = PgConnectOptions::default()
                     .database(&database)
-                    .username(&username)
-                    .password(&password);
+                    .username(&username);
+
+                if !password.is_empty() {
+                    options = options.password(&password);
+                }
+
                 if matches!(ssl_options, SslOptions::Disabled) {
                     options = options.ssl_mode(PgSslMode::Disable);
                 }

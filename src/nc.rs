@@ -212,7 +212,7 @@ fn parse_db_options(parsed: &Value) -> Result<Database> {
         }
         Some("pgsql") => {
             let username = parsed["dbuser"].as_str().ok_or(DbError::NoUsername)?;
-            let password = parsed["dbpassword"].as_str().ok_or(DbError::NoPassword)?;
+            let password = parsed["dbpassword"].as_str().unwrap_or_default();
             let (mut connect, disable_ssl) =
                 match split_host(parsed["dbhost"].as_str().unwrap_or_default()) {
                     (addr, None, None) => (
