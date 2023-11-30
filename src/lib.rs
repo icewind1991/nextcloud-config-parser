@@ -161,7 +161,7 @@ pub enum DbConnect {
 }
 
 impl Database {
-    pub fn url<'a>(&self) -> String {
+    pub fn url(&self) -> String {
         match self {
             Database::Sqlite { database } => {
                 format!("sqlite://{}", database.display())
