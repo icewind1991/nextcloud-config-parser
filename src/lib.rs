@@ -1,5 +1,6 @@
 mod nc;
 
+use form_urlencoded::Serializer;
 use miette::Diagnostic;
 #[cfg(feature = "redis-connect")]
 use redis::{ConnectionAddr, ConnectionInfo};
@@ -120,7 +121,7 @@ pub enum NotAConfigError {
     NotAnArray(PathBuf),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SslOptions {
     Enabled {
         key: String,
@@ -132,7 +133,7 @@ pub enum SslOptions {
     Default,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Database {
     Sqlite {
         database: PathBuf,
@@ -153,24 +154,17 @@ pub enum Database {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum DbConnect {
     Tcp { host: String, port: u16 },
     Socket(PathBuf),
 }
 
-#[cfg(feature = "db-sqlx")]
-impl From<Database> for sqlx::any::AnyConnectOptions {
-    fn from(cfg: Database) -> Self {
-        use sqlx::{
-            mysql::{MySqlConnectOptions, MySqlSslMode},
-            postgres::{PgConnectOptions, PgSslMode},
-            sqlite::SqliteConnectOptions,
-        };
-
-        match cfg {
+impl Database {
+    pub fn url<'a>(&self) -> String {
+        match self {
             Database::Sqlite { database } => {
-                SqliteConnectOptions::default().filename(database).into()
+                format!("sqlite://{}", database.display())
             }
             Database::MySql {
                 database,
@@ -179,33 +173,56 @@ impl From<Database> for sqlx::any::AnyConnectOptions {
                 connect,
                 ssl_options,
             } => {
-                let mut options = MySqlConnectOptions::default()
-                    .database(&database)
-                    .username(&username)
-                    .password(&password);
+                let mut params = Serializer::new(String::new());
                 match ssl_options {
-                    SslOptions::Enabled { ca, verify, .. } => {
-                        options = options.ssl_ca(ca);
-                        options = options.ssl_mode(if verify {
-                            MySqlSslMode::VerifyIdentity
-                        } else {
-                            MySqlSslMode::VerifyCa
-                        });
-                    }
-                    SslOptions::Disabled => {
-                        options = options.ssl_mode(MySqlSslMode::Disabled);
-                    }
                     SslOptions::Default => {}
+                    SslOptions::Disabled => {
+                        params.append_pair("ssl-mode", "disabled");
+                    }
+                    SslOptions::Enabled { ca, verify, .. } => {
+                        params.append_pair(
+                            "ssl-mode",
+                            if *verify {
+                                "verify_identity"
+                            } else {
+                                "verify_ca"
+                            },
+                        );
+                        params.append_pair("ssl-ca", ca.as_str());
+                    }
                 }
-                match connect {
+                let (host, port) = match connect {
                     DbConnect::Socket(socket) => {
-                        options = options.socket(socket);
+                        params.append_pair("socket", &socket.to_string_lossy());
+                        ("localhost", 3306) // ignored when socket is set
                     }
-                    DbConnect::Tcp { host, port } => {
-                        options = options.host(&host).port(port);
-                    }
+                    DbConnect::Tcp { host, port } => (host.as_str(), *port),
+                };
+                let params = params.finish().replace("%2F", "/");
+                let params_start = if params.is_empty() { "" } else { "?" };
+
+                if port == 3306 {
+                    format!(
+                        "mysql://{}:{}@{}/{}{}{}",
+                        urlencoding::encode(username),
+                        urlencoding::encode(password),
+                        host,
+                        database,
+                        params_start,
+                        params
+                    )
+                } else {
+                    format!(
+                        "mysql://{}:{}@{}:{}/{}{}{}",
+                        urlencoding::encode(username),
+                        urlencoding::encode(password),
+                        host,
+                        port,
+                        database,
+                        params_start,
+                        params
+                    )
                 }
-                options.into()
             }
             Database::Postgres {
                 database,
@@ -214,27 +231,64 @@ impl From<Database> for sqlx::any::AnyConnectOptions {
                 connect,
                 ssl_options,
             } => {
-                let mut options = PgConnectOptions::default()
-                    .database(&database)
-                    .username(&username);
-
-                if !password.is_empty() {
-                    options = options.password(&password);
+                let mut params = Serializer::new(String::new());
+                match ssl_options {
+                    SslOptions::Default => {}
+                    SslOptions::Disabled => {
+                        params.append_pair("sslmode", "disable");
+                    }
+                    SslOptions::Enabled { ca, verify, .. } => {
+                        params.append_pair(
+                            "ssl-mode",
+                            if *verify { "verify-full" } else { "verify-ca" },
+                        );
+                        params.append_pair("sslrootcert", ca.as_str());
+                    }
                 }
-
-                if matches!(ssl_options, SslOptions::Disabled) {
-                    options = options.ssl_mode(PgSslMode::Disable);
-                }
-                match connect {
+                let (host, port) = match connect {
                     DbConnect::Socket(socket) => {
-                        options = options.socket(socket);
+                        params.append_pair("host", &socket.to_string_lossy());
+                        ("localhost", 5432) // ignored when socket is set
                     }
-                    DbConnect::Tcp { host, port } => {
-                        options = options.host(&host).port(port);
-                    }
+                    DbConnect::Tcp { host, port } => (host.as_str(), *port),
+                };
+                let params = params.finish().replace("%2F", "/");
+                let params_start = if params.is_empty() { "" } else { "?" };
+
+                if port == 5432 {
+                    format!(
+                        "postgresql://{}:{}@{}/{}{}{}",
+                        urlencoding::encode(username),
+                        urlencoding::encode(password),
+                        host,
+                        database,
+                        params_start,
+                        params
+                    )
+                } else {
+                    format!(
+                        "postgresql://{}:{}@{}:{}/{}{}{}",
+                        urlencoding::encode(username),
+                        urlencoding::encode(password),
+                        host,
+                        port,
+                        database,
+                        params_start,
+                        params
+                    )
                 }
-                options.into()
             }
         }
+    }
+}
+
+#[cfg(feature = "db-sqlx")]
+impl TryFrom<Database> for sqlx::any::AnyConnectOptions {
+    type Error = sqlx::Error;
+
+    fn try_from(cfg: Database) -> Result<Self, Self::Error> {
+        use std::str::FromStr;
+
+        sqlx::any::AnyConnectOptions::from_str(&cfg.url())
     }
 }

@@ -6,6 +6,10 @@ use nextcloud_config_parser::RedisConfig;
 #[cfg(feature = "redis-connect")]
 use redis::ConnectionInfo;
 #[cfg(feature = "db-sqlx")]
+use sqlx::mysql::{MySqlConnectOptions, MySqlSslMode};
+#[cfg(feature = "db-sqlx")]
+use sqlx::sqlite::SqliteConnectOptions;
+#[cfg(feature = "db-sqlx")]
 use sqlx::{any::AnyConnectOptions, postgres::PgConnectOptions};
 #[cfg(feature = "db-sqlx")]
 use std::str::FromStr;
@@ -39,14 +43,12 @@ fn test_parse_config_basic() {
         },
         &config.database,
     );
-    #[cfg(feature = "db-sqlx")]
-    assert_debug_equal(
-        AnyConnectOptions::from_str(
-            "mysql://nextcloud:secret@127.0.0.1/nextcloud?ssl-mode=disabled",
-        )
-        .unwrap(),
-        config.database.into(),
+
+    assert_eq!(
+        config.database.url(),
+        "mysql://nextcloud:secret@127.0.0.1/nextcloud?ssl-mode=disabled"
     );
+
     #[cfg(feature = "redis-connect")]
     assert_debug_equal(
         RedisConfig::Single(ConnectionInfo::from_str("redis://127.0.0.1").unwrap()),
@@ -110,14 +112,12 @@ fn test_parse_comment_whitespace() {
         },
         &config.database,
     );
-    #[cfg(feature = "db-sqlx")]
-    assert_debug_equal(
-        AnyConnectOptions::from_str(
-            "mysql://nextcloud:secret@127.0.0.1/nextcloud?ssl-mode=disabled",
-        )
-        .unwrap(),
-        config.database.into(),
+
+    assert_eq!(
+        config.database.url(),
+        "mysql://nextcloud:secret@127.0.0.1/nextcloud?ssl-mode=disabled"
     );
+
     #[cfg(feature = "redis-connect")]
     assert_debug_equal(
         RedisConfig::Single(ConnectionInfo::from_str("redis://127.0.0.1").unwrap()),
@@ -141,13 +141,10 @@ fn test_parse_port_in_host() {
         },
         &config.database,
     );
-    #[cfg(feature = "db-sqlx")]
-    assert_debug_equal(
-        AnyConnectOptions::from_str(
-            "mysql://nextcloud:secret@127.0.0.1:1234/nextcloud?ssl-mode=disabled",
-        )
-        .unwrap(),
-        config.database.into(),
+
+    assert_eq!(
+        config.database.url(),
+        "mysql://nextcloud:secret@127.0.0.1:1234/nextcloud?ssl-mode=disabled"
     );
 }
 
@@ -164,16 +161,21 @@ fn test_parse_postgres_socket() {
         },
         &config.database,
     );
+
+    assert_eq!(
+        config.database.url(),
+        "postgresql://redacted:redacted@localhost/nextcloud?host=/var/run/postgresql"
+    );
+
     #[cfg(feature = "db-sqlx")]
     assert_debug_equal(
-        AnyConnectOptions::from(
-            PgConnectOptions::new()
-                .socket("/var/run/postgresql")
-                .username("redacted")
-                .password("redacted")
-                .database("nextcloud"),
-        ),
-        config.database.into(),
+        PgConnectOptions::new()
+            .socket("/var/run/postgresql")
+            .host("localhost")
+            .username("redacted")
+            .password("redacted")
+            .database("nextcloud"),
+        PgConnectOptions::from_str(&config.database.url()).unwrap(),
     );
 }
 
@@ -190,15 +192,19 @@ fn test_parse_postgres_socket_no_pass() {
         },
         &config.database,
     );
+
+    assert_eq!(
+        config.database.url(),
+        "postgresql://redacted:@localhost/nextcloud?host=/var/run/postgresql"
+    );
     #[cfg(feature = "db-sqlx")]
     assert_debug_equal(
-        AnyConnectOptions::from(
-            PgConnectOptions::new()
-                .socket("/var/run/postgresql")
-                .username("redacted")
-                .database("nextcloud"),
-        ),
-        config.database.into(),
+        PgConnectOptions::new()
+            .socket("/var/run/postgresql")
+            .host("localhost")
+            .username("redacted")
+            .database("nextcloud"),
+        PgConnectOptions::from_str(&config.database.url()).unwrap(),
     );
 }
 
@@ -215,16 +221,21 @@ fn test_parse_postgres_socket_folder() {
         },
         &config.database,
     );
+
+    assert_eq!(
+        config.database.url(),
+        "postgresql://redacted:redacted@localhost/nextcloud?host=/var/run/postgresql"
+    );
+
     #[cfg(feature = "db-sqlx")]
     assert_debug_equal(
-        AnyConnectOptions::from(
-            PgConnectOptions::new()
-                .socket("/var/run/postgresql")
-                .username("redacted")
-                .password("redacted")
-                .database("nextcloud"),
-        ),
-        config.database.into(),
+        PgConnectOptions::new()
+            .socket("/var/run/postgresql")
+            .host("localhost")
+            .username("redacted")
+            .password("redacted")
+            .database("nextcloud"),
+        PgConnectOptions::from_str(&config.database.url()).unwrap(),
     );
 }
 
@@ -265,14 +276,12 @@ fn test_parse_config_multiple() {
         },
         &config.database,
     );
-    #[cfg(feature = "db-sqlx")]
-    assert_debug_equal(
-        AnyConnectOptions::from_str(
-            "mysql://nextcloud:secret@127.0.0.1/nextcloud?ssl-mode=disabled",
-        )
-        .unwrap(),
-        config.database.into(),
+
+    assert_eq!(
+        config.database.url(),
+        "mysql://nextcloud:secret@127.0.0.1/nextcloud?ssl-mode=disabled"
     );
+
     #[cfg(feature = "redis-connect")]
     assert_debug_equal(
         RedisConfig::Single(ConnectionInfo::from_str("redis://127.0.0.1").unwrap()),
@@ -294,7 +303,7 @@ fn test_parse_config_multiple_no_glob() {
     #[cfg(feature = "db-sqlx")]
     assert_debug_equal(
         AnyConnectOptions::from_str("sqlite:///nc/nextcloud.db").unwrap(),
-        config.database.into(),
+        config.database.try_into().unwrap(),
     );
     #[cfg(feature = "redis-connect")]
     assert_debug_equal(
@@ -319,13 +328,21 @@ fn test_parse_config_mysql_fqdn() {
         },
         &config.database,
     );
+
+    assert_eq!(
+        config.database.url(),
+        "mysql://nextcloud:secret@db.example.com/nextcloud"
+    );
+
     #[cfg(feature = "db-sqlx")]
     assert_debug_equal(
-        AnyConnectOptions::from_str(
-            "mysql://nextcloud:secret@db.example.com/nextcloud?ssl-mode=preferred",
-        )
-        .unwrap(),
-        config.database.into(),
+        MySqlConnectOptions::new()
+            .username("nextcloud")
+            .password("secret")
+            .database("nextcloud")
+            .host("db.example.com")
+            .ssl_mode(MySqlSslMode::Preferred),
+        MySqlConnectOptions::from_str(&config.database.url()).unwrap(),
     );
 }
 
@@ -345,13 +362,21 @@ fn test_parse_config_mysql_ip_no_verify() {
         },
         &config.database,
     );
+
+    assert_eq!(
+        config.database.url(),
+        "mysql://nextcloud:secret@1.2.3.4/nextcloud"
+    );
+
     #[cfg(feature = "db-sqlx")]
     assert_debug_equal(
-        AnyConnectOptions::from_str(
-            "mysql://nextcloud:secret@1.2.3.4/nextcloud?ssl-mode=preferred",
-        )
-        .unwrap(),
-        config.database.into(),
+        MySqlConnectOptions::new()
+            .username("nextcloud")
+            .password("secret")
+            .database("nextcloud")
+            .host("1.2.3.4")
+            .ssl_mode(MySqlSslMode::Preferred),
+        MySqlConnectOptions::from_str(&config.database.url()).unwrap(),
     );
 }
 
@@ -376,13 +401,22 @@ fn test_parse_config_mysql_ssl_ca() {
         },
         &config.database,
     );
+
+    assert_eq!(
+        config.database.url(),
+        "mysql://nextcloud:secret@db.example.com/nextcloud?ssl-mode=verify_identity&ssl-ca=/ca-cert.pem"
+    );
+
     #[cfg(feature = "db-sqlx")]
     assert_debug_equal(
-        AnyConnectOptions::from_str(
-            "mysql://nextcloud:secret@db.example.com/nextcloud?ssl-mode=verify_identity&ssl-ca=/ca-cert.pem",
-        )
-            .unwrap(),
-        config.database.into(),
+        MySqlConnectOptions::new()
+            .username("nextcloud")
+            .password("secret")
+            .database("nextcloud")
+            .host("db.example.com")
+            .ssl_mode(MySqlSslMode::VerifyIdentity)
+            .ssl_ca("/ca-cert.pem"),
+        MySqlConnectOptions::from_str(&config.database.url()).unwrap(),
     );
 }
 
@@ -407,13 +441,21 @@ fn test_parse_config_mysql_ssl_ca_no_verify() {
         },
         &config.database,
     );
+    assert_eq!(
+        config.database.url(),
+        "mysql://nextcloud:secret@db.example.com/nextcloud?ssl-mode=verify_ca&ssl-ca=/ca-cert.pem"
+    );
+
     #[cfg(feature = "db-sqlx")]
     assert_debug_equal(
-        AnyConnectOptions::from_str(
-            "mysql://nextcloud:secret@db.example.com/nextcloud?ssl-mode=verify_ca&ssl-ca=/ca-cert.pem",
-        )
-            .unwrap(),
-        config.database.into(),
+        MySqlConnectOptions::new()
+            .username("nextcloud")
+            .password("secret")
+            .database("nextcloud")
+            .host("db.example.com")
+            .ssl_mode(MySqlSslMode::VerifyCa)
+            .ssl_ca("/ca-cert.pem"),
+        MySqlConnectOptions::from_str(&config.database.url()).unwrap(),
     );
 }
 
@@ -433,17 +475,21 @@ fn test_parse_postgres_ip() {
         },
         &config.database,
     );
+    assert_eq!(
+        config.database.url(),
+        "postgresql://redacted:redacted@1.2.3.4/nextcloud?sslmode=disable"
+    );
+
     #[cfg(feature = "db-sqlx")]
     assert_debug_equal(
-        AnyConnectOptions::from(
-            PgConnectOptions::new()
-                .host("1.2.3.4")
-                .username("redacted")
-                .password("redacted")
-                .database("nextcloud")
-                .ssl_mode(sqlx::postgres::PgSslMode::Disable),
-        ),
-        config.database.into(),
+        PgConnectOptions::new()
+            .host("1.2.3.4")
+            .username("redacted")
+            .password("redacted")
+            .database("nextcloud")
+            .port(5432)
+            .ssl_mode(sqlx::postgres::PgSslMode::Disable),
+        PgConnectOptions::from_str(&config.database.url()).unwrap(),
     );
 }
 
@@ -463,16 +509,20 @@ fn test_parse_postgres_fqdn() {
         },
         &config.database,
     );
+    assert_eq!(
+        config.database.url(),
+        "postgresql://redacted:redacted@pg.example.com/nextcloud"
+    );
+
     #[cfg(feature = "db-sqlx")]
     assert_debug_equal(
-        AnyConnectOptions::from(
-            PgConnectOptions::new()
-                .host("pg.example.com")
-                .username("redacted")
-                .password("redacted")
-                .database("nextcloud"),
-        ),
-        config.database.into(),
+        PgConnectOptions::new()
+            .host("pg.example.com")
+            .username("redacted")
+            .password("redacted")
+            .port(5432)
+            .database("nextcloud"),
+        PgConnectOptions::from_str(&config.database.url()).unwrap(),
     );
 }
 
@@ -484,6 +534,12 @@ fn test_parse_config_sqlite_default_db() {
             database: "/nc/data/owncloud.db".into(),
         },
         &config.database,
+    );
+
+    #[cfg(feature = "db-sqlx")]
+    assert_debug_equal(
+        SqliteConnectOptions::new().filename("/nc/data/owncloud.db"),
+        SqliteConnectOptions::from_str(&config.database.url()).unwrap(),
     );
 }
 
