@@ -562,3 +562,37 @@ fn test_parse_config_nested_array() {
         &config.database,
     );
 }
+
+#[test]
+fn test_parse_postgres_escaped_credentials() {
+    let config = config_from_file("tests/configs/postgres_escape.php");
+    assert_debug_equal(
+        &Database::Postgres {
+            database: "nextcloud".to_string(),
+            username: "reda:cted".to_string(),
+            password: "reda@cted".to_string(),
+            connect: DbConnect::Tcp {
+                host: "1.2.3.4".to_string(),
+                port: 5432,
+            },
+            ssl_options: SslOptions::Disabled,
+        },
+        &config.database,
+    );
+    assert_eq!(
+        config.database.url(),
+        "postgresql://reda%3Acted:reda%40cted@1.2.3.4/nextcloud?sslmode=disable"
+    );
+
+    #[cfg(feature = "db-sqlx")]
+    assert_debug_equal(
+        PgConnectOptions::new()
+            .host("1.2.3.4")
+            .username("reda:cted")
+            .password("reda@cted")
+            .port(5432)
+            .database("nextcloud")
+            .ssl_mode(sqlx::postgres::PgSslMode::Disable),
+        PgConnectOptions::from_str(&config.database.url()).unwrap(),
+    );
+}
