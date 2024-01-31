@@ -284,6 +284,9 @@ fn parse_db_options(parsed: &Value) -> Result<Database> {
 }
 
 fn split_host(host: &str) -> (&str, Option<u16>, Option<&str>) {
+    if host.starts_with('/') {
+        return ("localhost", None, Some(host));
+    }
     let mut parts = host.split(':');
     let host = parts.next().unwrap();
     match parts
