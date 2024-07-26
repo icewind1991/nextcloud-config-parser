@@ -307,6 +307,8 @@ enum RedisAddress {
 
 #[cfg(feature = "redis-connect")]
 fn parse_redis_options(parsed: &Value) -> RedisConfig {
+    use redis::ProtocolVersion;
+
     let (redis_options, address) = if parsed["redis.cluster"].is_array() {
         let redis_options = &parsed["redis.cluster"];
         let seeds = redis_options["seeds"].values();
@@ -352,6 +354,7 @@ fn parse_redis_options(parsed: &Value) -> RedisConfig {
                 db,
                 username,
                 password,
+                protocol: ProtocolVersion::default(),
             },
         }),
         RedisAddress::Cluster(addresses) => RedisConfig::Cluster(
@@ -363,6 +366,7 @@ fn parse_redis_options(parsed: &Value) -> RedisConfig {
                         db,
                         username: username.clone(),
                         password: password.clone(),
+                        protocol: ProtocolVersion::default(),
                     },
                 })
                 .collect(),
