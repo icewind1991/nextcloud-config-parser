@@ -837,7 +837,7 @@ dependencies = [
 
 [[package]]
 name = "nextcloud-config-parser"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "form_urlencoded",
  "futures-core",
