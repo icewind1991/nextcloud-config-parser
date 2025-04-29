@@ -1,11 +1,9 @@
-#[cfg(feature = "redis-connect")]
-use crate::RedisConfig;
 use crate::{
-    Config, Database, DbConnect, DbError, Error, NotAConfigError, PhpParseError, Result, SslOptions,
+    Config, Database, DbConnect, DbError, Error, NotAConfigError, PhpParseError,
+    RedisConnectionInfo, Result, SslOptions,
 };
+use crate::{RedisConfig, RedisConnectionAddr};
 use php_literal_parser::Value;
-#[cfg(feature = "redis-connect")]
-use redis::{ConnectionAddr, ConnectionInfo, RedisConnectionInfo};
 use std::collections::HashMap;
 use std::fs::DirEntry;
 use std::iter::once;
@@ -111,14 +109,12 @@ fn parse_files(files: impl IntoIterator<Item = PathBuf>) -> Result<Config> {
         .clone()
         .into_string()
         .ok_or(Error::NoUrl)?;
-    #[cfg(feature = "redis-connect")]
     let redis = parse_redis_options(&parsed);
 
     Ok(Config {
         database,
         database_prefix,
         nextcloud_url,
-        #[cfg(feature = "redis-connect")]
         redis,
     })
 }
@@ -299,30 +295,31 @@ fn split_host(host: &str) -> (&str, Option<u16>, Option<&str>) {
     }
 }
 
-#[cfg(feature = "redis-connect")]
 enum RedisAddress {
-    Single(ConnectionAddr),
-    Cluster(Vec<ConnectionAddr>),
+    Single(RedisConnectionAddr),
+    Cluster(Vec<RedisConnectionAddr>),
 }
 
-#[cfg(feature = "redis-connect")]
 fn parse_redis_options(parsed: &Value) -> RedisConfig {
-    use redis::ProtocolVersion;
-
     let (redis_options, address) = if parsed["redis.cluster"].is_array() {
         let redis_options = &parsed["redis.cluster"];
         let seeds = redis_options["seeds"].values();
         let addresses = seeds
             .filter_map(|seed| seed.as_str())
             .map(split_host)
-            .filter_map(|(host, port, _)| Some(ConnectionAddr::Tcp(host.into(), port?)))
+            .filter_map(|(host, port, _)| {
+                Some(RedisConnectionAddr::Tcp {
+                    host: host.into(),
+                    port: port?,
+                })
+            })
             .collect::<Vec<_>>();
         (redis_options, RedisAddress::Cluster(addresses))
     } else {
         let redis_options = &parsed["redis"];
         let mut host = redis_options["host"].as_str().unwrap_or("127.0.0.1");
         let address = if host.starts_with('/') {
-            RedisAddress::Single(ConnectionAddr::Unix(host.into()))
+            RedisAddress::Single(RedisConnectionAddr::Unix { path: host.into() })
         } else {
             if host == "localhost" {
                 host = "127.0.0.1";
@@ -332,7 +329,10 @@ fn parse_redis_options(parsed: &Value) -> RedisConfig {
             } else {
                 split_host(host)
             };
-            RedisAddress::Single(ConnectionAddr::Tcp(host.into(), port.unwrap_or(6379)))
+            RedisAddress::Single(RedisConnectionAddr::Tcp {
+                host: host.into(),
+                port: port.unwrap_or(6379),
+            })
         };
         (redis_options, address)
     };
@@ -348,26 +348,20 @@ fn parse_redis_options(parsed: &Value) -> RedisConfig {
         .map(String::from);
 
     match address {
-        RedisAddress::Single(addr) => RedisConfig::Single(ConnectionInfo {
+        RedisAddress::Single(addr) => RedisConfig::Single(RedisConnectionInfo {
             addr,
-            redis: RedisConnectionInfo {
-                db,
-                username,
-                password,
-                protocol: ProtocolVersion::default(),
-            },
+            db,
+            username,
+            password,
         }),
         RedisAddress::Cluster(addresses) => RedisConfig::Cluster(
             addresses
                 .into_iter()
-                .map(|addr| ConnectionInfo {
+                .map(|addr| RedisConnectionInfo {
                     addr,
-                    redis: RedisConnectionInfo {
-                        db,
-                        username: username.clone(),
-                        password: password.clone(),
-                        protocol: ProtocolVersion::default(),
-                    },
+                    db,
+                    username: username.clone(),
+                    password: password.clone(),
                 })
                 .collect(),
         ),
@@ -375,7 +369,6 @@ fn parse_redis_options(parsed: &Value) -> RedisConfig {
 }
 
 #[test]
-#[cfg(feature = "redis-connect")]
 fn test_redis_empty_password_none() {
     let config =
         php_literal_parser::from_str(r#"["redis" => ["host" => "redis", "password" => "pass"]]"#)

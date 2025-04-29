@@ -1,10 +1,10 @@
-use nextcloud_config_parser::{parse, parse_glob, Config, Database, DbConnect, SslOptions};
+use nextcloud_config_parser::{
+    parse, parse_glob, Config, Database, DbConnect, RedisConfig, RedisConnectionAddr,
+    RedisConnectionInfo, SslOptions,
+};
 use std::fmt::Debug;
 
-#[cfg(feature = "redis-connect")]
-use nextcloud_config_parser::RedisConfig;
-#[cfg(feature = "redis-connect")]
-use redis::ConnectionInfo;
+use redis::{ConnectionAddr, ConnectionInfo};
 use sqlx::mysql::{MySqlConnectOptions, MySqlSslMode};
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::{any::AnyConnectOptions, postgres::PgConnectOptions};
@@ -19,6 +19,31 @@ fn assert_debug_equal<T: Debug>(a: T, b: T) {
 #[cfg(test)]
 fn config_from_file(path: &str) -> Config {
     parse(path).unwrap()
+}
+
+fn parse_redis(cfg: &str) -> RedisConnectionInfo {
+    let redis = ConnectionInfo::from_str(cfg).unwrap();
+    let addr = match redis.addr {
+        ConnectionAddr::Tcp(host, port) => RedisConnectionAddr::Tcp { host, port },
+        ConnectionAddr::TcpTls {
+            host,
+            port,
+            insecure,
+            ..
+        } => RedisConnectionAddr::TcpTls {
+            host,
+            port,
+            insecure,
+            tls_params: None,
+        },
+        ConnectionAddr::Unix(path) => RedisConnectionAddr::Unix { path },
+    };
+    RedisConnectionInfo {
+        addr,
+        db: redis.redis.db,
+        username: redis.redis.username,
+        password: redis.redis.password,
+    }
 }
 
 #[test]
@@ -45,9 +70,8 @@ fn test_parse_config_basic() {
         "mysql://nextcloud:secret@127.0.0.1/nextcloud?ssl-mode=disabled"
     );
 
-    #[cfg(feature = "redis-connect")]
     assert_debug_equal(
-        RedisConfig::Single(ConnectionInfo::from_str("redis://127.0.0.1").unwrap()),
+        RedisConfig::Single(parse_redis("redis://127.0.0.1")),
         config.redis,
     );
 }
@@ -59,33 +83,28 @@ fn test_parse_implicit_prefix() {
 }
 
 #[test]
-#[cfg(feature = "redis-connect")]
 fn test_parse_empty_redis_password() {
     let config = config_from_file("tests/configs/empty_redis_password.php");
     assert_debug_equal(
-        RedisConfig::Single(ConnectionInfo::from_str("redis://127.0.0.1").unwrap()),
+        RedisConfig::Single(parse_redis("redis://127.0.0.1")),
         config.redis,
     );
 }
 
 #[test]
-#[cfg(feature = "redis-connect")]
 fn test_parse_full_redis() {
     let config = config_from_file("tests/configs/full_redis.php");
     assert_debug_equal(
-        RedisConfig::Single(
-            ConnectionInfo::from_str("redis://name:moresecret@redis:1234/1").unwrap(),
-        ),
+        RedisConfig::Single(parse_redis("redis://name:moresecret@redis:1234/1")),
         config.redis,
     );
 }
 
 #[test]
-#[cfg(feature = "redis-connect")]
 fn test_parse_redis_socket() {
     let config = config_from_file("tests/configs/redis_socket.php");
     assert_debug_equal(
-        RedisConfig::Single(ConnectionInfo::from_str("redis+unix:///redis").unwrap()),
+        RedisConfig::Single(parse_redis("redis+unix:///redis")),
         config.redis,
     );
 }
@@ -114,9 +133,8 @@ fn test_parse_comment_whitespace() {
         "mysql://nextcloud:secret@127.0.0.1/nextcloud?ssl-mode=disabled"
     );
 
-    #[cfg(feature = "redis-connect")]
     assert_debug_equal(
-        RedisConfig::Single(ConnectionInfo::from_str("redis://127.0.0.1").unwrap()),
+        RedisConfig::Single(parse_redis("redis://127.0.0.1")),
         config.redis,
     );
 }
@@ -263,19 +281,18 @@ fn test_parse_postgres_socket_folder() {
 }
 
 #[test]
-#[cfg(feature = "redis-connect")]
 fn test_parse_redis_cluster() {
     let config = config_from_file("tests/configs/redis.cluster.php");
     let mut conns = config.redis.into_vec();
-    conns.sort_by(|a, b| a.addr.to_string().cmp(&b.addr.to_string()));
+    conns.sort_by(|a, b| format!("{:?}", a.addr).cmp(&format!("{:?}", b.addr)));
     assert_debug_equal(
         vec![
-            ConnectionInfo::from_str("redis://:xxx@db1:6380").unwrap(),
-            ConnectionInfo::from_str("redis://:xxx@db1:6381").unwrap(),
-            ConnectionInfo::from_str("redis://:xxx@db1:6382").unwrap(),
-            ConnectionInfo::from_str("redis://:xxx@db2:6380").unwrap(),
-            ConnectionInfo::from_str("redis://:xxx@db2:6381").unwrap(),
-            ConnectionInfo::from_str("redis://:xxx@db2:6382").unwrap(),
+            parse_redis("redis://:xxx@db1:6380"),
+            parse_redis("redis://:xxx@db1:6381"),
+            parse_redis("redis://:xxx@db1:6382"),
+            parse_redis("redis://:xxx@db2:6380"),
+            parse_redis("redis://:xxx@db2:6381"),
+            parse_redis("redis://:xxx@db2:6382"),
         ],
         conns,
     );
@@ -305,9 +322,8 @@ fn test_parse_config_multiple() {
         "mysql://nextcloud:secret@127.0.0.1/nextcloud?ssl-mode=disabled"
     );
 
-    #[cfg(feature = "redis-connect")]
     assert_debug_equal(
-        RedisConfig::Single(ConnectionInfo::from_str("redis://127.0.0.1").unwrap()),
+        RedisConfig::Single(parse_redis("redis://127.0.0.1")),
         config.redis,
     );
 }
@@ -327,9 +343,8 @@ fn test_parse_config_multiple_no_glob() {
         AnyConnectOptions::from_str("sqlite:///nc/nextcloud.db").unwrap(),
         AnyConnectOptions::from_str(&config.database.url()).unwrap(),
     );
-    #[cfg(feature = "redis-connect")]
     assert_debug_equal(
-        RedisConfig::Single(ConnectionInfo::from_str("redis://127.0.0.1").unwrap()),
+        RedisConfig::Single(parse_redis("redis://127.0.0.1")),
         config.redis,
     );
 }
