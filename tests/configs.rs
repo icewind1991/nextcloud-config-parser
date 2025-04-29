@@ -5,13 +5,9 @@ use std::fmt::Debug;
 use nextcloud_config_parser::RedisConfig;
 #[cfg(feature = "redis-connect")]
 use redis::ConnectionInfo;
-#[cfg(feature = "db-sqlx")]
 use sqlx::mysql::{MySqlConnectOptions, MySqlSslMode};
-#[cfg(feature = "db-sqlx")]
 use sqlx::sqlite::SqliteConnectOptions;
-#[cfg(feature = "db-sqlx")]
 use sqlx::{any::AnyConnectOptions, postgres::PgConnectOptions};
-#[cfg(feature = "db-sqlx")]
 use std::str::FromStr;
 
 #[cfg(test)]
@@ -167,7 +163,6 @@ fn test_parse_postgres_socket() {
         "postgresql://redacted:redacted@localhost/nextcloud?host=/var/run/postgresql"
     );
 
-    #[cfg(feature = "db-sqlx")]
     assert_debug_equal(
         PgConnectOptions::new()
             .socket("/var/run/postgresql")
@@ -198,7 +193,6 @@ fn test_parse_postgres_socket_empty_hostname() {
         "postgresql://nextcloud:redacted@localhost/nextcloud?host=/run/postgresql"
     );
 
-    #[cfg(feature = "db-sqlx")]
     assert_debug_equal(
         PgConnectOptions::new()
             .socket("/run/postgresql")
@@ -228,7 +222,6 @@ fn test_parse_postgres_socket_no_pass() {
         config.database.url(),
         "postgresql://redacted:@localhost/nextcloud?host=/var/run/postgresql"
     );
-    #[cfg(feature = "db-sqlx")]
     assert_debug_equal(
         PgConnectOptions::new()
             .socket("/var/run/postgresql")
@@ -258,7 +251,6 @@ fn test_parse_postgres_socket_folder() {
         "postgresql://redacted:redacted@localhost/nextcloud?host=/var/run/postgresql"
     );
 
-    #[cfg(feature = "db-sqlx")]
     assert_debug_equal(
         PgConnectOptions::new()
             .socket("/var/run/postgresql")
@@ -331,10 +323,9 @@ fn test_parse_config_multiple_no_glob() {
         },
         &config.database,
     );
-    #[cfg(feature = "db-sqlx")]
     assert_debug_equal(
         AnyConnectOptions::from_str("sqlite:///nc/nextcloud.db").unwrap(),
-        config.database.try_into().unwrap(),
+        AnyConnectOptions::from_str(&config.database.url()).unwrap(),
     );
     #[cfg(feature = "redis-connect")]
     assert_debug_equal(
@@ -365,7 +356,6 @@ fn test_parse_config_mysql_fqdn() {
         "mysql://nextcloud:secret@db.example.com/nextcloud"
     );
 
-    #[cfg(feature = "db-sqlx")]
     assert_debug_equal(
         MySqlConnectOptions::new()
             .username("nextcloud")
@@ -399,7 +389,6 @@ fn test_parse_config_mysql_ip_no_verify() {
         "mysql://nextcloud:secret@1.2.3.4/nextcloud"
     );
 
-    #[cfg(feature = "db-sqlx")]
     assert_debug_equal(
         MySqlConnectOptions::new()
             .username("nextcloud")
@@ -438,7 +427,6 @@ fn test_parse_config_mysql_ssl_ca() {
         "mysql://nextcloud:secret@db.example.com/nextcloud?ssl-mode=verify_identity&ssl-ca=/ca-cert.pem"
     );
 
-    #[cfg(feature = "db-sqlx")]
     assert_debug_equal(
         MySqlConnectOptions::new()
             .username("nextcloud")
@@ -477,7 +465,6 @@ fn test_parse_config_mysql_ssl_ca_no_verify() {
         "mysql://nextcloud:secret@db.example.com/nextcloud?ssl-mode=verify_ca&ssl-ca=/ca-cert.pem"
     );
 
-    #[cfg(feature = "db-sqlx")]
     assert_debug_equal(
         MySqlConnectOptions::new()
             .username("nextcloud")
@@ -511,7 +498,6 @@ fn test_parse_postgres_ip() {
         "postgresql://redacted:redacted@1.2.3.4/nextcloud?sslmode=disable"
     );
 
-    #[cfg(feature = "db-sqlx")]
     assert_debug_equal(
         PgConnectOptions::new()
             .host("1.2.3.4")
@@ -545,7 +531,6 @@ fn test_parse_postgres_fqdn() {
         "postgresql://redacted:redacted@pg.example.com/nextcloud"
     );
 
-    #[cfg(feature = "db-sqlx")]
     assert_debug_equal(
         PgConnectOptions::new()
             .host("pg.example.com")
@@ -567,7 +552,6 @@ fn test_parse_config_sqlite_default_db() {
         &config.database,
     );
 
-    #[cfg(feature = "db-sqlx")]
     assert_debug_equal(
         SqliteConnectOptions::new().filename("/nc/data/owncloud.db"),
         SqliteConnectOptions::from_str(&config.database.url()).unwrap(),
@@ -615,7 +599,6 @@ fn test_parse_postgres_escaped_credentials() {
         "postgresql://reda%3Acted:reda%40cted@1.2.3.4/nextcloud?sslmode=disable"
     );
 
-    #[cfg(feature = "db-sqlx")]
     assert_debug_equal(
         PgConnectOptions::new()
             .host("1.2.3.4")

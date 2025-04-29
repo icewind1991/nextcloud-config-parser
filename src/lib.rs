@@ -281,14 +281,3 @@ impl Database {
         }
     }
 }
-
-#[cfg(feature = "db-sqlx")]
-impl TryFrom<Database> for sqlx::any::AnyConnectOptions {
-    type Error = sqlx::Error;
-
-    fn try_from(cfg: Database) -> Result<Self, Self::Error> {
-        use std::str::FromStr;
-
-        sqlx::any::AnyConnectOptions::from_str(&cfg.url())
-    }
-}

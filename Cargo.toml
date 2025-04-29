@@ -1,7 +1,7 @@
 [package]
 name = "nextcloud-config-parser"
 description = "Rust parser for nextcloud config files"
-version = "0.12.0"
+version = "0.13.0"
 authors = ["Robin Appelman <robin@icewind.nl>"]
 edition = "2021"
 license = "MIT OR Apache-2.0"
@@ -13,16 +13,13 @@ rust-version = "1.77.0"
 redis = { version = "0.28.1", optional = true, default-features = false }
 thiserror = "2.0.11"
 php-literal-parser = "0.6.2"
-sqlx = { version = "0.8.3", default-features = false, features = ["any", "mysql", "sqlite", "postgres"], optional = true }
 miette = "7.4.0"
 urlencoding = "2.1.3"
 form_urlencoded = "1.2.1"
-home = "=0.5.9" # 0.5.11 has an msrv of 1.81
 
 [dev-dependencies]
-sqlx = { version = "0.8.3", default-features = false, features = ["runtime-tokio-rustls", "any", "mysql", "sqlite", "postgres"] }
 miette = { version = "7.4.0", features = ["fancy"] }
+sqlx = { version = "0.8.3", default-features = false, features = ["any", "mysql", "sqlite", "postgres"] }
 
 [features]
-db-sqlx = ["sqlx"]
 redis-connect = ["redis"]
