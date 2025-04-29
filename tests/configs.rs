@@ -1,6 +1,6 @@
 use nextcloud_config_parser::{
     parse, parse_glob, Config, Database, DbConnect, RedisConfig, RedisConnectionAddr,
-    RedisConnectionInfo, SslOptions,
+    RedisConnectionInfo, RedisTlsParams, SslOptions,
 };
 use std::fmt::Debug;
 
@@ -25,15 +25,9 @@ fn parse_redis(cfg: &str) -> RedisConnectionInfo {
     let redis = ConnectionInfo::from_str(cfg).unwrap();
     let addr = match redis.addr {
         ConnectionAddr::Tcp(host, port) => RedisConnectionAddr::Tcp { host, port },
-        ConnectionAddr::TcpTls {
+        ConnectionAddr::TcpTls { host, port, .. } => RedisConnectionAddr::TcpTls {
             host,
             port,
-            insecure,
-            ..
-        } => RedisConnectionAddr::TcpTls {
-            host,
-            port,
-            insecure,
             tls_params: None,
         },
         ConnectionAddr::Unix(path) => RedisConnectionAddr::Unix { path },
@@ -105,6 +99,30 @@ fn test_parse_redis_socket() {
     let config = config_from_file("tests/configs/redis_socket.php");
     assert_debug_equal(
         RedisConfig::Single(parse_redis("redis+unix:///redis")),
+        config.redis,
+    );
+}
+
+#[test]
+fn test_parse_redis_tls() {
+    let config = config_from_file("tests/configs/redis_tls.php");
+    assert_debug_equal(
+        RedisConfig::Single(RedisConnectionInfo {
+            addr: RedisConnectionAddr::TcpTls {
+                host: "127.0.0.1".into(),
+                port: 6379,
+                tls_params: Some(RedisTlsParams {
+                    local_cert: Some("/certs/redis.crt".into()),
+                    local_pk: Some("/certs/redis.key".into()),
+                    ca_file: Some("/certs/ca.crt".into()),
+                    insecure: false,
+                    accept_invalid_hostname: false,
+                }),
+            },
+            db: 0,
+            username: None,
+            password: None,
+        }),
         config.redis,
     );
 }

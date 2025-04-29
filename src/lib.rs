@@ -31,12 +31,39 @@ pub enum RedisConnectionAddr {
     TcpTls {
         host: String,
         port: u16,
-        insecure: bool,
-        tls_params: Option<String>,
+        tls_params: Option<RedisTlsParams>,
     },
     Unix {
         path: PathBuf,
     },
+}
+
+impl RedisConnectionAddr {
+    pub fn with_tls(self, tls_params: RedisTlsParams) -> Self {
+        match self {
+            RedisConnectionAddr::Tcp { host, port }
+            | RedisConnectionAddr::TcpTls { host, port, .. } => RedisConnectionAddr::TcpTls {
+                host,
+                port,
+                tls_params: Some(tls_params),
+            },
+            unix => unix,
+        }
+    }
+
+    pub fn with_tls_opt(self, tls_params: Option<RedisTlsParams>) -> Self {
+        if let Some(params) = tls_params {
+            self.with_tls(params)
+        } else {
+            match self {
+                RedisConnectionAddr::Tcp { host, port }
+                | RedisConnectionAddr::TcpTls { host, port, .. } => {
+                    RedisConnectionAddr::Tcp { host, port }
+                }
+                unix => unix,
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -45,6 +72,15 @@ pub struct RedisConnectionInfo {
     pub db: i64,
     pub username: Option<String>,
     pub password: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct RedisTlsParams {
+    pub local_cert: Option<PathBuf>,
+    pub local_pk: Option<PathBuf>,
+    pub ca_file: Option<PathBuf>,
+    pub accept_invalid_hostname: bool,
+    pub insecure: bool,
 }
 
 impl RedisConfig {
