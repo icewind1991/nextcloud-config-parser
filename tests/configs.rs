@@ -24,12 +24,9 @@ fn config_from_file(path: &str) -> Config {
 fn parse_redis(cfg: &str) -> RedisConnectionInfo {
     let redis = ConnectionInfo::from_str(cfg).unwrap();
     let addr = match redis.addr {
-        ConnectionAddr::Tcp(host, port) => RedisConnectionAddr::Tcp { host, port },
-        ConnectionAddr::TcpTls { host, port, .. } => RedisConnectionAddr::TcpTls {
-            host,
-            port,
-            tls_params: None,
-        },
+        ConnectionAddr::Tcp(host, port) | ConnectionAddr::TcpTls { host, port, .. } => {
+            RedisConnectionAddr::Tcp { host, port }
+        }
         ConnectionAddr::Unix(path) => RedisConnectionAddr::Unix { path },
     };
     RedisConnectionInfo {
@@ -37,6 +34,7 @@ fn parse_redis(cfg: &str) -> RedisConnectionInfo {
         db: redis.redis.db,
         username: redis.redis.username,
         password: redis.redis.password,
+        tls_params: None,
     }
 }
 
@@ -108,20 +106,20 @@ fn test_parse_redis_tls() {
     let config = config_from_file("tests/configs/redis_tls.php");
     assert_debug_equal(
         RedisConfig::Single(RedisConnectionInfo {
-            addr: RedisConnectionAddr::TcpTls {
+            addr: RedisConnectionAddr::Tcp {
                 host: "127.0.0.1".into(),
                 port: 6379,
-                tls_params: Some(RedisTlsParams {
-                    local_cert: Some("/certs/redis.crt".into()),
-                    local_pk: Some("/certs/redis.key".into()),
-                    ca_file: Some("/certs/ca.crt".into()),
-                    insecure: false,
-                    accept_invalid_hostname: false,
-                }),
             },
             db: 0,
             username: None,
             password: None,
+            tls_params: Some(RedisTlsParams {
+                local_cert: Some("/certs/redis.crt".into()),
+                local_pk: Some("/certs/redis.key".into()),
+                ca_file: Some("/certs/ca.crt".into()),
+                insecure: false,
+                accept_invalid_hostname: false,
+            }),
         }),
         config.redis,
     );
@@ -301,18 +299,18 @@ fn test_parse_postgres_socket_folder() {
 #[test]
 fn test_parse_redis_cluster() {
     let config = config_from_file("tests/configs/redis.cluster.php");
-    let mut conns = config.redis.into_vec();
-    conns.sort_by(|a, b| format!("{:?}", a.addr).cmp(&format!("{:?}", b.addr)));
+    let mut addresses = config.redis.addr().cloned().collect::<Vec<_>>();
+    addresses.sort_by(|a, b| format!("{:?}", a).cmp(&format!("{:?}", b)));
     assert_debug_equal(
         vec![
-            parse_redis("redis://:xxx@db1:6380"),
-            parse_redis("redis://:xxx@db1:6381"),
-            parse_redis("redis://:xxx@db1:6382"),
-            parse_redis("redis://:xxx@db2:6380"),
-            parse_redis("redis://:xxx@db2:6381"),
-            parse_redis("redis://:xxx@db2:6382"),
+            parse_redis("redis://:xxx@db1:6380").addr,
+            parse_redis("redis://:xxx@db1:6381").addr,
+            parse_redis("redis://:xxx@db1:6382").addr,
+            parse_redis("redis://:xxx@db2:6380").addr,
+            parse_redis("redis://:xxx@db2:6381").addr,
+            parse_redis("redis://:xxx@db2:6382").addr,
         ],
-        conns,
+        addresses,
     );
 }
 

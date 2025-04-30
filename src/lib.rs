@@ -1,6 +1,7 @@
 mod nc;
 
 use form_urlencoded::Serializer;
+use itertools::Either;
 use miette::Diagnostic;
 use std::iter::once;
 use std::path::PathBuf;
@@ -19,50 +20,42 @@ pub struct Config {
 #[derive(Debug)]
 pub enum RedisConfig {
     Single(RedisConnectionInfo),
-    Cluster(Vec<RedisConnectionInfo>),
+    Cluster(RedisClusterConnectionInfo),
+}
+
+impl RedisConfig {
+    pub fn as_single(&self) -> Option<RedisConnectionInfo> {
+        match self {
+            RedisConfig::Single(single) => Some(single.clone()),
+            RedisConfig::Cluster(cluster) => cluster.iter().next(),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
 pub enum RedisConnectionAddr {
-    Tcp {
-        host: String,
-        port: u16,
-    },
-    TcpTls {
-        host: String,
-        port: u16,
-        tls_params: Option<RedisTlsParams>,
-    },
-    Unix {
-        path: PathBuf,
-    },
+    Tcp { host: String, port: u16 },
+    Unix { path: PathBuf },
 }
 
-impl RedisConnectionAddr {
-    pub fn with_tls(self, tls_params: RedisTlsParams) -> Self {
-        match self {
-            RedisConnectionAddr::Tcp { host, port }
-            | RedisConnectionAddr::TcpTls { host, port, .. } => RedisConnectionAddr::TcpTls {
-                host,
-                port,
-                tls_params: Some(tls_params),
-            },
-            unix => unix,
-        }
-    }
+#[derive(Clone, Debug)]
+pub struct RedisClusterConnectionInfo {
+    pub addr: Vec<RedisConnectionAddr>,
+    pub db: i64,
+    pub username: Option<String>,
+    pub password: Option<String>,
+    pub tls_params: Option<RedisTlsParams>,
+}
 
-    pub fn with_tls_opt(self, tls_params: Option<RedisTlsParams>) -> Self {
-        if let Some(params) = tls_params {
-            self.with_tls(params)
-        } else {
-            match self {
-                RedisConnectionAddr::Tcp { host, port }
-                | RedisConnectionAddr::TcpTls { host, port, .. } => {
-                    RedisConnectionAddr::Tcp { host, port }
-                }
-                unix => unix,
-            }
-        }
+impl RedisClusterConnectionInfo {
+    pub fn iter(&self) -> impl Iterator<Item = RedisConnectionInfo> + '_ {
+        self.addr.iter().cloned().map(|addr| RedisConnectionInfo {
+            addr,
+            db: self.db,
+            username: self.username.clone(),
+            password: self.password.clone(),
+            tls_params: self.tls_params.clone(),
+        })
     }
 }
 
@@ -72,9 +65,10 @@ pub struct RedisConnectionInfo {
     pub db: i64,
     pub username: Option<String>,
     pub password: Option<String>,
+    pub tls_params: Option<RedisTlsParams>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct RedisTlsParams {
     pub local_cert: Option<PathBuf>,
     pub local_pk: Option<PathBuf>,
@@ -85,44 +79,37 @@ pub struct RedisTlsParams {
 
 impl RedisConfig {
     pub fn addr(&self) -> impl Iterator<Item = &RedisConnectionAddr> {
-        let boxed: Box<dyn Iterator<Item = &RedisConnectionAddr>> = match self {
-            RedisConfig::Single(conn) => Box::new(once(&conn.addr)),
-            RedisConfig::Cluster(conns) => Box::new(conns.iter().map(|conn| &conn.addr)),
-        };
-        boxed
+        match self {
+            RedisConfig::Single(conn) => Either::Left(once(&conn.addr)),
+            RedisConfig::Cluster(cluster) => Either::Right(cluster.addr.iter()),
+        }
     }
 
     pub fn db(&self) -> i64 {
         match self {
             RedisConfig::Single(conn) => conn.db,
-            RedisConfig::Cluster(conns) => conns.first().map(|conn| conn.db).unwrap_or_default(),
+            RedisConfig::Cluster(cluster) => cluster.db,
         }
     }
 
     pub fn username(&self) -> Option<&str> {
         match self {
             RedisConfig::Single(conn) => conn.username.as_deref(),
-            RedisConfig::Cluster(conns) => conns
-                .first()
-                .map(|conn| conn.username.as_deref())
-                .unwrap_or_default(),
+            RedisConfig::Cluster(cluster) => cluster.username.as_deref(),
         }
     }
 
     pub fn passwd(&self) -> Option<&str> {
         match self {
             RedisConfig::Single(conn) => conn.password.as_deref(),
-            RedisConfig::Cluster(conns) => conns
-                .first()
-                .map(|conn| conn.password.as_deref())
-                .unwrap_or_default(),
+            RedisConfig::Cluster(cluster) => cluster.password.as_deref(),
         }
     }
 
-    pub fn into_vec(self) -> Vec<RedisConnectionInfo> {
+    pub fn is_empty(&self) -> bool {
         match self {
-            RedisConfig::Single(conn) => vec![conn],
-            RedisConfig::Cluster(vec) => vec,
+            RedisConfig::Single(_) => false,
+            RedisConfig::Cluster(cluster) => cluster.addr.is_empty(),
         }
     }
 }

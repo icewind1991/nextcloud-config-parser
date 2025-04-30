@@ -1,6 +1,6 @@
 use crate::{
     Config, Database, DbConnect, DbError, Error, NotAConfigError, PhpParseError,
-    RedisConnectionInfo, RedisTlsParams, Result, SslOptions,
+    RedisClusterConnectionInfo, RedisConnectionInfo, RedisTlsParams, Result, SslOptions,
 };
 use crate::{RedisConfig, RedisConnectionAddr};
 use php_literal_parser::Value;
@@ -343,8 +343,7 @@ fn parse_redis_options(parsed: &Value) -> RedisConfig {
             local_cert: ssl_options["local_cert"].as_str().map(From::from),
             local_pk: ssl_options["local_pk"].as_str().map(From::from),
             ca_file: ssl_options["cafile"].as_str().map(From::from),
-            accept_invalid_hostname: ssl_options["allow_self_signed"] == true
-                || ssl_options["verify_peer_name"] == false,
+            accept_invalid_hostname: ssl_options["verify_peer_name"] == false,
             insecure: ssl_options["verify_peer "] == false,
         })
     } else {
@@ -363,22 +362,19 @@ fn parse_redis_options(parsed: &Value) -> RedisConfig {
 
     match address {
         RedisAddress::Single(addr) => RedisConfig::Single(RedisConnectionInfo {
-            addr: addr.with_tls_opt(tls_params),
+            addr,
             db,
             username,
             password,
+            tls_params,
         }),
-        RedisAddress::Cluster(addresses) => RedisConfig::Cluster(
-            addresses
-                .into_iter()
-                .map(|addr| RedisConnectionInfo {
-                    addr: addr.with_tls_opt(tls_params.clone()),
-                    db,
-                    username: username.clone(),
-                    password: password.clone(),
-                })
-                .collect(),
-        ),
+        RedisAddress::Cluster(addr) => RedisConfig::Cluster(RedisClusterConnectionInfo {
+            addr,
+            db,
+            username,
+            password,
+            tls_params,
+        }),
     }
 }
 
