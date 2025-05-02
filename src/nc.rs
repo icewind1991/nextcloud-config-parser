@@ -1,5 +1,5 @@
 use crate::{
-    Config, Database, DbConnect, DbError, Error, NotAConfigError, PhpParseError,
+    split_host, Config, Database, DbConnect, DbError, Error, NotAConfigError, PhpParseError,
     RedisClusterConnectionInfo, RedisConnectionInfo, RedisTlsParams, Result, SslOptions,
 };
 use crate::{RedisConfig, RedisConnectionAddr};
@@ -279,22 +279,6 @@ fn parse_db_options(parsed: &Value) -> Result<Database> {
     }
 }
 
-fn split_host(host: &str) -> (&str, Option<u16>, Option<&str>) {
-    if host.starts_with('/') {
-        return ("localhost", None, Some(host));
-    }
-    let mut parts = host.split(':');
-    let host = parts.next().unwrap();
-    match parts
-        .next()
-        .map(|port_or_socket| u16::from_str(port_or_socket).map_err(|_| port_or_socket))
-    {
-        Some(Ok(port)) => (host, Some(port), None),
-        Some(Err(socket)) => (host, None, Some(socket)),
-        None => (host, None, None),
-    }
-}
-
 enum RedisAddress {
     Single(RedisConnectionAddr),
     Cluster(Vec<RedisConnectionAddr>),
@@ -304,36 +288,24 @@ fn parse_redis_options(parsed: &Value) -> RedisConfig {
     let (redis_options, address) = if parsed["redis.cluster"].is_array() {
         let redis_options = &parsed["redis.cluster"];
         let seeds = redis_options["seeds"].values();
-        let addresses = seeds
+        let mut addresses = seeds
             .filter_map(|seed| seed.as_str())
-            .map(split_host)
-            .filter_map(|(host, port, _)| {
-                Some(RedisConnectionAddr::Tcp {
-                    host: host.into(),
-                    port: port?,
-                })
+            .map(|seed| {
+                RedisConnectionAddr::parse(seed, None, redis_options["ssl_context"].is_array())
             })
             .collect::<Vec<_>>();
+        addresses.sort();
         (redis_options, RedisAddress::Cluster(addresses))
     } else {
         let redis_options = &parsed["redis"];
-        let mut host = redis_options["host"].as_str().unwrap_or("127.0.0.1");
-        let address = if host.starts_with('/') {
-            RedisAddress::Single(RedisConnectionAddr::Unix { path: host.into() })
-        } else {
-            if host == "localhost" {
-                host = "127.0.0.1";
-            }
-            let (host, port, _) = if let Some(port) = redis_options["port"].as_int() {
-                (host, Some(port as u16), None)
-            } else {
-                split_host(host)
-            };
-            RedisAddress::Single(RedisConnectionAddr::Tcp {
-                host: host.into(),
-                port: port.unwrap_or(6379),
-            })
-        };
+        let host = redis_options["host"].as_str().unwrap_or("127.0.0.1");
+        let address = RedisAddress::Single(RedisConnectionAddr::parse(
+            host,
+            redis_options["port"]
+                .as_int()
+                .and_then(|port| u16::try_from(port).ok()),
+            redis_options["ssl_context"].is_array(),
+        ));
         (redis_options, address)
     };
 

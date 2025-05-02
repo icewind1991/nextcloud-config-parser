@@ -5,6 +5,7 @@ use itertools::Either;
 use miette::Diagnostic;
 use std::iter::once;
 use std::path::PathBuf;
+use std::str::FromStr;
 use thiserror::Error;
 
 pub use nc::{parse, parse_glob};
@@ -32,10 +33,38 @@ impl RedisConfig {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialOrd, PartialEq, Ord, Eq)]
 pub enum RedisConnectionAddr {
-    Tcp { host: String, port: u16 },
+    Tcp { host: String, port: u16, tls: bool },
     Unix { path: PathBuf },
+}
+
+impl RedisConnectionAddr {
+    fn parse(mut host: &str, port: Option<u16>, tls: bool) -> Self {
+        if host.starts_with("/") {
+            RedisConnectionAddr::Unix { path: host.into() }
+        } else {
+            let tls = if host.starts_with("tls://") || host.starts_with("rediss://") {
+                host = host.split_once("://").unwrap().1;
+                true
+            } else {
+                tls
+            };
+            if host == "localhost" {
+                host = "127.0.0.1";
+            }
+            let (host, port, _) = if let Some(port) = port {
+                (host, Some(port), None)
+            } else {
+                split_host(host)
+            };
+            RedisConnectionAddr::Tcp {
+                host: host.into(),
+                port: port.unwrap_or(6379),
+                tls,
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -319,5 +348,21 @@ impl Database {
                 }
             }
         }
+    }
+}
+
+fn split_host(host: &str) -> (&str, Option<u16>, Option<&str>) {
+    if host.starts_with('/') {
+        return ("localhost", None, Some(host));
+    }
+    let mut parts = host.split(':');
+    let host = parts.next().unwrap();
+    match parts
+        .next()
+        .map(|port_or_socket| u16::from_str(port_or_socket).map_err(|_| port_or_socket))
+    {
+        Some(Ok(port)) => (host, Some(port), None),
+        Some(Err(socket)) => (host, None, Some(socket)),
+        None => (host, None, None),
     }
 }

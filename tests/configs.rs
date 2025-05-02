@@ -1,6 +1,6 @@
 use nextcloud_config_parser::{
-    parse, parse_glob, Config, Database, DbConnect, RedisConfig, RedisConnectionAddr,
-    RedisConnectionInfo, RedisTlsParams, SslOptions,
+    parse, parse_glob, Config, Database, DbConnect, RedisClusterConnectionInfo, RedisConfig,
+    RedisConnectionAddr, RedisConnectionInfo, RedisTlsParams, SslOptions,
 };
 use std::fmt::Debug;
 
@@ -24,9 +24,16 @@ fn config_from_file(path: &str) -> Config {
 fn parse_redis(cfg: &str) -> RedisConnectionInfo {
     let redis = ConnectionInfo::from_str(cfg).unwrap();
     let addr = match redis.addr {
-        ConnectionAddr::Tcp(host, port) | ConnectionAddr::TcpTls { host, port, .. } => {
-            RedisConnectionAddr::Tcp { host, port }
-        }
+        ConnectionAddr::Tcp(host, port) => RedisConnectionAddr::Tcp {
+            host,
+            port,
+            tls: false,
+        },
+        ConnectionAddr::TcpTls { host, port, .. } => RedisConnectionAddr::Tcp {
+            host,
+            port,
+            tls: true,
+        },
         ConnectionAddr::Unix(path) => RedisConnectionAddr::Unix { path },
     };
     RedisConnectionInfo {
@@ -109,10 +116,43 @@ fn test_parse_redis_tls() {
             addr: RedisConnectionAddr::Tcp {
                 host: "127.0.0.1".into(),
                 port: 6379,
+                tls: true,
             },
             db: 0,
             username: None,
             password: None,
+            tls_params: Some(RedisTlsParams {
+                local_cert: Some("/certs/redis.crt".into()),
+                local_pk: Some("/certs/redis.key".into()),
+                ca_file: Some("/certs/ca.crt".into()),
+                insecure: false,
+                accept_invalid_hostname: false,
+            }),
+        }),
+        config.redis,
+    );
+}
+
+#[test]
+fn test_parse_redis_cluster_tls() {
+    let config = config_from_file("tests/configs/redis_cluster_tls.php");
+    assert_debug_equal(
+        RedisConfig::Cluster(RedisClusterConnectionInfo {
+            addr: vec![
+                RedisConnectionAddr::Tcp {
+                    host: "db1".into(),
+                    port: 6380,
+                    tls: true,
+                },
+                RedisConnectionAddr::Tcp {
+                    host: "db1".into(),
+                    port: 6381,
+                    tls: true,
+                },
+            ],
+            db: 0,
+            username: None,
+            password: Some("xxx".into()),
             tls_params: Some(RedisTlsParams {
                 local_cert: Some("/certs/redis.crt".into()),
                 local_pk: Some("/certs/redis.key".into()),
