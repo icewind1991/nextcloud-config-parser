@@ -1,3 +1,5 @@
+# Moved to https://codeberg.org/icewind/nextcloud-config-parser
+
 # nextcloud-config-parser
 
 Rust parser for nextcloud config files.
